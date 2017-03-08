@@ -471,32 +471,35 @@ InstallGlobalFunction(  MAJORANA_AlgebraProduct,
 
         function(u,v,basis) # If all the relevant products are known, returns the algebra product of u and v. If not, returns 0
 
-        local i, j, sum;
+        local i, j, sum, dim;
 
-        sum:=[];
-
-        if ForAll(u,x-> x= 0 ) or ForAll(v,x->x=0) then
-            return u*0;
-        fi;
-
-        for i in [1..Size(u)] do
-            if u[i] <> 0 then
-                for j in [1..Size(v)] do
-                    if v[j] <> 0 then
-                        if basis[i][j] <> false then
-                            Append(sum,[u[i]*v[j]*basis[i][j]]);
-                        else
-                            # cannot calculate product
-                            return false;
-                        fi;
-                    fi;
-                od;
+#        if ForAll(u,x-> x= 0 ) or ForAll(v,x->x=0) then
+#            return u*0;
+#        fi;
+            if IsZero(u) or IsZero(v) then
+                return 0 * u;
             fi;
-        od;
-        return Sum(sum);
-        end
 
-        );
+        sum := u*0;
+        dim := Length(u);
+
+        for i in [1..Length(u)] do
+        #    if u[i] <> 0 then
+            for j in [1..Length(v)] do
+        #        if v[j] <> 0 then
+                if basis[i][j] = false then
+                    if u[i] <> 0 and v[j] <> 0 then
+                        return false;
+                    fi;
+                else
+                    sum := sum + u[i]*v[j]*basis[i][j];
+                fi;
+         #       fi;
+            od;
+         #   fi;
+        od;
+        return sum;
+        end );
 
 InstallGlobalFunction(  MAJORANA_InnerProduct,
 
