@@ -1027,9 +1027,9 @@ function(G,T)
                 fi;
             od;
 
-            3Aaxes:=DuplicateFreeList(3Aaxes); u:=Size(3Aaxes);
-            4Aaxes:=DuplicateFreeList(4Aaxes); v:=Size(4Aaxes);
-            5Aaxes:=DuplicateFreeList(5Aaxes); w:=Size(5Aaxes);
+            3Aaxes:=Set(3Aaxes); u:=Size(3Aaxes);
+            4Aaxes:=Set(4Aaxes); v:=Size(4Aaxes);
+            5Aaxes:=Set(5Aaxes); w:=Size(5Aaxes);
             
             coordinates:=[];
             
