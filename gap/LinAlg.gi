@@ -1,32 +1,23 @@
 # Takes input matrix, returns a matrix whose rows form a basis of the nullspace of mat
 
 InstallGlobalFunction(MAJORANA_NullSpace,
+function(mat)
+    local   A,      # input matrix
+            B;      # output matrix
 
-    function(mat) 
+    A := ShallowCopy(mat);
+    A := NullspaceMat(TransposedMat(A));
 
-        local   A,      # input matrix
-                B;      # output matrix
+    if A <> [] then
+        B := List( A, ShallowCopy );
+        MAJORANA_ReversedEchelonForm(B);
+    fi;
 
-        A := ShallowCopy(mat);
-        
-        A := NullspaceMat(TransposedMat(A));
-        
-        if A <> [] then 
-        
-            B := List( A, ShallowCopy );
-        
-            MAJORANA_ReversedEchelonForm(B);
-        fi;
-        
-        return B;
+    return B;
+end);
 
-        end
-
-        );
-        
 InstallGlobalFunction(MAJORANA_SolutionMatVecs1,
-    
-    function(mat,vec)
+function(mat,vec)
     
     local   A,
             B,
@@ -163,74 +154,69 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs1,
     return [sol,unsolved];
     
     end );
-    
-    
+
 InstallGlobalFunction(MAJORANA_SolutionMatVecs,
+function(mat,vec) # Takes as input two m atrices, the
+                  # second being interpreted as a vector of vectors.
+                  # Returns a list of size four if system is inconsistent,
+                  # otherwise returns a list of size 4
+    local   m,
+            n,
+            res,
+            sol,
+            unsolved,
+            heads,
+            i,
+            j,
+            pos;
 
-    function(mat,vec) # Takes as input two matrices, the second being interpreted as a vector of vectors. Returns a list of size four if system is inconsistent, otherwise returns a list of size 4
+    m := Size(mat);
+    n := Size(mat[1]);
 
-        local   m,
-                n,
-                res,
-                sol,
-                unsolved,
-                heads,
-                i,
-                j,
-                pos;
-        
-        m := Size(mat);
-        n := Size(mat[1]);
-        
-        if m < n then 
-            return false;
-        fi;
-        
-        Display([m,n]);
+    if m < n then
+        return false;
+    fi;
 
-        Error("Pause");
+    Display([m,n]);
 
-        res := SemiEchelonMatTransformation(mat);
-        mat := List(res.vectors,ShallowCopy);
-        vec := res.coeffs*vec;
-        
-        sol := [1..n]*0;
-        unsolved := [];
-        
-        heads := res.heads;
-        
-        for i in Reversed([1 .. n]) do 
-        
-            pos := heads[i];
-            
-            if pos = 0 then 
-                Add(unsolved,i);   
-                sol[i] := [];             
-            else
-                for j in [i + 1 .. n] do
-                    if mat[pos][j] <> 0 then 
-                        if j in unsolved then
-                            Add(unsolved,i);
-                            break;
-                        else
-                            vec[pos] := vec[pos] - mat[pos][j]*sol[j];
-                            mat[pos][j] := 0;
-                        fi;
+    Error("Pause");
+
+    res := SemiEchelonMatTransformation(mat);
+    mat := List(res.vectors,ShallowCopy);
+    vec := res.coeffs*vec;
+
+    sol := [1..n]*0;
+    unsolved := [];
+
+    heads := res.heads;
+
+    for i in Reversed([1 .. n]) do
+        pos := heads[i];
+        if pos = 0 then
+            Add(unsolved,i);
+            sol[i] := [];
+        else
+            for j in [i + 1 .. n] do
+                if mat[pos][j] <> 0 then
+                    if j in unsolved then
+                        Add(unsolved,i);
+                        break;
+                    else
+                        vec[pos] := vec[pos] - mat[pos][j]*sol[j];
+                        mat[pos][j] := 0;
                     fi;
-                od; 
-                
-                if not i in unsolved then 
-                    sol[i] := vec[pos];
-                else
-                    sol[i] := [];
                 fi;
+            od;
+            if not i in unsolved then
+                sol[i] := vec[pos];
+            else
+                sol[i] := [];
             fi;
-        od;
-        
-        return [sol,unsolved];
+        fi;
+    od;
+    return [sol,unsolved];
+end);
 
-        end );
-    
 InstallGlobalFunction(MAJORANA_LDLTDecomposition,
 
     function(A) # Takes as input a matrix A. If A is positive semidefinite then will return [L,D] such that A= LDL^T. Else returns 0. Note: does not test if matrix is square or symmetric.
