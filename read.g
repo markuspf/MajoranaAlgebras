@@ -6,6 +6,7 @@
 #
 
 ReadPackage( "MajoranaAlgebras", "gap/LinAlg.gi");
+ReadPackage( "MajoranaAlgebras", "gap/LinAlgPadic.gi");
 
 ReadPackage( "MajoranaAlgebras", "gap/LinAlgPadic.gi");
 
