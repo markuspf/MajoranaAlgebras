@@ -1,3 +1,5 @@
+
+
 fam := PurePadicNumberFamily(5,100);
 PadicList := function(padic)
     local result, n, p, r, i;
@@ -238,24 +240,41 @@ function(semiech, vec, selection)
     return [lvec, sol];
 end;
 
-InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
-function(mat, vec, p, max_iter)
-    local lcm, intsys, intmat, intvec, intsol, pmat, pmatinv, pvec, done, sol, i, x, k,
-          nriter, semiech, coeffs, vv, denom, dd, vecd, n, rank, solvb, pre, pfam, ppower;
 
-    if not IsPrime(p) then
-        Error("p has to be a prime");
-    fi;
+
+#
+# This function tries to solve the system xA = b, where
+# A is a n x m matrix over the rational numbers, and b
+# is a vector of length m over the rationals.
+#
+# It first converts the system into an integer system by
+# finding the LCM l of all denominators of all entries in A
+# and b. It is then true that any solution of x(lA) = lb is also
+# a solution of xA = b.
+#
+# In a "presolving" step, the matrix lA is reduced modulo the prime
+# p, put into semiechelon form and the variables for which a unique
+# solution exists are selected. (TODO: Describe how these are selected
+# those)
+#
+# We then iterate solving  x(lA) = lb mod p, computing a p-adic expansion
+# of a solution to the system x(lA) = lb.
+# Once we reach a number of digits (currently max_iter) we try to compute
+# the denominator of the solution. Once we have computed a denominator d,
+# we solve x(lA) = d(lb) for x, and return x/d as the result.
+#
+InstallGlobalFunction(MAJORANA_SolutionIntMatVecs_Padic,
+function(intmat, intvec, p, max_iter)
+    local pfam,
+          intsol,
+          intres,
+          pre, pvec,
+          done, nriter, coeffs, ppower, sol, x, i, dd,
+          k, denom, vecd;
 
     pfam := PurePadicNumberFamily(p, max_iter);
-
-    n := Length(mat);
-    Print("#I number of variables: ", n, "\n");
-
-    intsys := MakeIntSystem(mat, vec);
-    intmat := intsys[1];
-    intvec := MutableCopyMat(intsys[2]);
-    intsol := [1..n] * 0;
+    intsol := [1..Length(intmat)] * 0;
+    intres := MutableCopyMat(intvec);
 
     Print("#I Presolving...\n");
     pre := Presolve(intmat, p);
@@ -264,9 +283,7 @@ function(mat, vec, p, max_iter)
     nriter := 0;
     coeffs := [];
     ppower := 1;
-
-    # ListWithIdenticalEntries(n, PadicNumber(pfam, 0));
-
+    
     #T just solve for the selected ones?
     while true do
         nriter := nriter + 1;
@@ -274,7 +291,7 @@ function(mat, vec, p, max_iter)
 
         # Here we should only be testing the solved variables?
         if IsZero(sol[1]) then
-            #    intsol := p * intsol;
+            #  intsol := p * intsol;
             #T Matrix/vector op?
             #T this is also reasonably ugly...
             x := List(sol[2], IntFFE);
@@ -282,12 +299,13 @@ function(mat, vec, p, max_iter)
 
             AddRowVector(intsol, x, ppower);
             for i in [1..Length(sol[2])] do
-                AddRowVector(intvec, intmat[i], -x[i]);
+                AddRowVector(intres, intmat[i], -x[i]);
             od;
 
             # Solution found?
-            if IsZero(intvec{pre.solvb}) then
-                return intsol;
+            if IsZero(intres{pre.solvb}) then
+                Print("#I found an integer solution\n");
+                return [pre.solvb, intsol];
             else
                 if nriter > max_iter then
                     Print("#I Trying to find denominator\n");
@@ -299,21 +317,20 @@ function(mat, vec, p, max_iter)
                     od;
                     denom := Lcm(dd);
 
+                    Print("#I Denominator: ", denom, "\n");
                     if denom = 1 then
-                        Print("#I Denominator found denominator: ", denom, "\n");
-#                        sol := SolutionIntMat(intsys[1], intsys[2]);
-                        return [pre.solvb, intsol, coeffs];
+                        Error("A denominator of 1 should not happen!");
+                        return [pre.solvb, SolutionIntMat(intmat, intvec), coeffs];
+#                        return [pre.solvb, intsol, coeffs];
                     else
-                        Print("found denominator: ", denom, "\n");
-                        vecd := denom * vec;
-                        sol := MAJORANA_SolutionMatVecs_Padic(mat, vecd, p, max_iter);
-
+                        vecd := denom * intvec;
+                        sol := MAJORANA_SolutionIntMatVecs_Padic(intmat, vecd, p, max_iter);
                         return [pre.solvb, sol[2]/denom];
                     fi;
                 fi;
 
-                intvec := intvec / p;
-                pvec := Z(p)^0 * intvec;
+                intres := intres / p;
+                pvec := Z(p)^0 * intres;
                 ppower := ppower * p;
                 if nriter > max_iter then
                     Error("");
@@ -321,9 +338,28 @@ function(mat, vec, p, max_iter)
             fi;
         else
             # No rational solution exists
+            Error("I believe there is no solution (which I think is wrong");
             return fail;
         fi;
     od;
+end);
 
-#    return [pmat, pvec];
+InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
+function(mat, vec, p, max_iter)
+    local intsys;
+
+    if not IsPrime(p) then
+        Error("p has to be a prime");
+    fi;
+    if max_iter < 1000 then
+        # TODO: Should probably make a better guess about the
+        #       number of iterations or not try to restrict the
+        #       user.
+        Error("using less that 1000 iterations is not recommended");
+    fi;
+
+    Print("#I number of variables: ", Length(mat), "\n");
+    intsys := MakeIntSystem(mat, vec);
+
+    return MAJORANA_SolutionIntMatVecs_Padic(intsys[1], intsys[2], p, max_iter);
 end);
