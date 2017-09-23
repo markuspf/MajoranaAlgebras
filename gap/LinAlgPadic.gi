@@ -112,13 +112,23 @@ PadicDenominator := function(number, p, precision)
     n := 0;
     while true do
         n := n + 1;
+        Print("#I little: ", big, "\n");
+        Print("#I big:    ", little, "\n");
+        
         tmp := PadicAdd(little, big);
+        Print("#I tmp:    ", tmp, "\n");
+
+        Print("#I  ", Float(Length(PositionsProperty(tmp, x -> (x=0)))/Length(tmp)), " ",
+              Float(Length(PositionsProperty(tmp, x -> (x=(p-1))))/Length(tmp)), "\n");
+        
+        Print("#I ", bigf + littlef, "\n");
 
         # TODO better check that this is *Exact*
         if Length(PositionsProperty(tmp, x -> (x=0) or x = (p-1)))/Length(tmp) > 3/4 then
             if bigf + littlef = 2 then
                 Error("gcd is 2");
             fi;
+            Print("#I returning\n");
             return bigf + littlef;
         fi;
 
@@ -140,6 +150,8 @@ PadicDenominator := function(number, p, precision)
 end;
 
 A := [[1/2, 1/3], [2,3]];
+Ap := [[1/2, 1/3], [2,3], [5/2, 10/3]];
+
 b := [1,1];
 
 Read("pkg/A5Matrix.txt");
@@ -148,9 +160,15 @@ Read("pkg/A5Vector.txt");
 # I think I want to use row-major, which means variables are in
 # rows.
 
-mat1 := TransposedMat(mat);
-mat2 := mat1{[1..100]};
-vec1 := TransposedMat(vec)[1];
+tmat := TransposedMat(mat);
+tvec := TransposedMat(vec);
+tvec1 := tvec[1];
+
+sample1 := function()
+    return MAJORANA_SolutionMatVecs_Padic( [[1,0,1],[0,0,0],[1,0,0]]
+                                         , [0,0,1/3]
+                                         , 11, 100);
+end;
 
 # Select the variables that we can solve for
 # They are the ones that have no (possible) contribution 
@@ -267,40 +285,52 @@ InstallGlobalFunction(MAJORANA_SolutionIntMatVecs_Padic,
 function(intmat, intvec, p, max_iter)
     local pfam,
           intsol,
-          intres,
-          pre, pvec,
-          done, nriter, coeffs, ppower, sol, x, i, dd,
+          intres, intressym,
+          pre, pvec, pvecsym, solsym,
+          done, nriter, coeffs, ppower, sol, x, y, i, dd,
           k, denom, vecd;
 
     pfam := PurePadicNumberFamily(p, max_iter);
     intsol := [1..Length(intmat)] * 0;
     intres := MutableCopyMat(intvec);
+    intressym := MutableCopyMat(intvec);
 
     Print("#I Presolving...\n");
     pre := Presolve(intmat, p);
-    pvec := Z(p)^0 * intvec;
+    pvec := Z(p)^0 * intres;
+    pvecsym := Z(p)^0 * intressym;
     done := false;
     nriter := 0;
     coeffs := [];
     ppower := 1;
-    
+
     #T just solve for the selected ones?
     while true do
         nriter := nriter + 1;
         sol := SelectedSolutionWithEchelonForm(pre.semiech, pvec, pre.solvb);
-
+        solsym := SelectedSolutionWithEchelonForm(pre.semiech, pvecsym, pre.solvb);
         # Here we should only be testing the solved variables?
         if IsZero(sol[1]) then
             #  intsol := p * intsol;
             #T Matrix/vector op?
             #T this is also reasonably ugly...
-            x := List(sol[2], IntFFE);
+
             Add(coeffs, List(sol[2], IntFFE));
+
+            x := List(sol[2], IntFFE);
+            y := List(solsym[2], IntFFESymm);
 
             AddRowVector(intsol, x, ppower);
             for i in [1..Length(sol[2])] do
                 AddRowVector(intres, intmat[i], -x[i]);
+                AddRowVector(intressym, intmat[i], -y[i]);
             od;
+
+          #  Print("#I intsol: ", intsol, "\n");
+            Print("#I x:         ", x, " ", List(solsym[2], IntFFE), "\n");
+            Print("#I y:         ", y, " ", List(solsym[2], IntFFESymm), "\n");
+            Print("#I intres:    ", intres, "\n");
+            Print("#I intressym: ", intressym, "\n");
 
             # Solution found?
             if IsZero(intres{pre.solvb}) then
@@ -319,8 +349,8 @@ function(intmat, intvec, p, max_iter)
 
                     Print("#I Denominator: ", denom, "\n");
                     if denom = 1 then
-                        Error("A denominator of 1 should not happen!");
-                        return [pre.solvb, SolutionIntMat(intmat, intvec), coeffs];
+                        Print("#I A denominator of 1 should not happen. Trying alternate solution method\n");
+                        return [pre.solvb, SolutionIntMat(intmat, intvec), coeffs, intres, intsol];
 #                        return [pre.solvb, intsol, coeffs];
                     else
                         vecd := denom * intvec;
@@ -330,7 +360,12 @@ function(intmat, intvec, p, max_iter)
                 fi;
 
                 intres := intres / p;
+                intressym := intressym / p;
+
                 pvec := Z(p)^0 * intres;
+                pvecsym := Z(p)^0 * intressym;
+                Print("#I pvec:    ", pvec, "\n");
+                Print("#I pvecsym: ", pvecsym, "\n");
                 ppower := ppower * p;
                 if nriter > max_iter then
                     Error("");
@@ -338,7 +373,7 @@ function(intmat, intvec, p, max_iter)
             fi;
         else
             # No rational solution exists
-            Error("I believe there is no solution (which I think is wrong");
+            Print("#I There does not exist a rational solution\n");
             return fail;
         fi;
     od;
@@ -355,7 +390,7 @@ function(mat, vec, p, max_iter)
         # TODO: Should probably make a better guess about the
         #       number of iterations or not try to restrict the
         #       user.
-        Error("using less that 1000 iterations is not recommended");
+        Print("#I Warning: using less that 1000 iterations is not recommended\n");
     fi;
 
     Print("#I number of variables: ", Length(mat), "\n");
