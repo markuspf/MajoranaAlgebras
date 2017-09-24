@@ -1,6 +1,19 @@
-
-
-fam := PurePadicNumberFamily(5,100);
+#
+# Solving linear equations over the integers/rationals by Dixon/Hensel lifting
+#
+# This is a GAP prototype which already works quite a bit faster than any code
+# inside GAP, for reasonably large systems (thousands of equations)
+#
+# If you find any bugs, email markus.pfeiffer@morphism.de
+#
+# TODO:
+# * Make a better implementation of the padics code. Its currently pretty brittle
+#   and hacky
+# * More tests
+# * look at flint that has some of this functionality
+# * Implement in C or Rust (or Julia)?
+# * Parallelisation strategies
+#
 PadicList := function(padic)
     local result, n, p, r, i;
 
@@ -44,28 +57,6 @@ PadicDenominator := function(number, p, precision)
     end;
 
     PadicAssert(number);
-#    PadicList := function(padic)
-#        local result, n, p, r, i;
-#
-#        result := [];
-#        n := padic![2];
-#        p := FamilyObj(padic)!.prime;
-#
-#        for i in [1..padic![1]] do
-#            Add(result, 0);
-#        od;
-#
-#        while n <> 0 do
-#            r := n mod p;
-#            Add(result, r);
-#            n := (n - r)/p;
-#        od;
-#
-#        for i in [Length(result)+1..FamilyObj(padic)!.precision] do
-#            Add(result, 0);
-#        od;
-#        return result{[1..FamilyObj(padic)!.precision]};
-#    end;
     PadicLess := function(a,b)
         local i;
 
@@ -112,27 +103,22 @@ PadicDenominator := function(number, p, precision)
     n := 0;
     while true do
         n := n + 1;
-        Print("#I little: ", big, "\n");
-        Print("#I big:    ", little, "\n");
-        
-        tmp := PadicAdd(little, big);
-        Print("#I tmp:    ", tmp, "\n");
 
-        Print("#I  ", Float(Length(PositionsProperty(tmp, x -> (x=0)))/Length(tmp)), " ",
-              Float(Length(PositionsProperty(tmp, x -> (x=(p-1))))/Length(tmp)), "\n");
-        
-        Print("#I ", bigf + littlef, "\n");
+        tmp := PadicAdd(little, big);
+
+        Info(InfoMajoranaPadics, 10,
+             STRINGIFY(Float(Length(PositionsProperty(tmp, x -> (x=0)))/Length(tmp)), " ",
+                       Float(Length(PositionsProperty(tmp, x -> (x=(p-1))))/Length(tmp)), "\n"));
 
         # TODO better check that this is *Exact*
+        #      by looking at the p-adic norm and deciding whether number has converged
         if Length(PositionsProperty(tmp, x -> (x=0) or x = (p-1)))/Length(tmp) > 3/4 then
             if bigf + littlef = 2 then
                 Error("gcd is 2");
             fi;
-            Print("#I returning\n");
             return bigf + littlef;
         fi;
 
-        # TODO: There must be a more efficient way to do this
         if PadicLess(tmp, little) then
             little := tmp;
             littlef := bigf + littlef;
@@ -140,11 +126,11 @@ PadicDenominator := function(number, p, precision)
             big := tmp;
             bigf := bigf + littlef;
         else
-            Print("#I little <= tmp <= big: "
+            Info(InfoMajoranaLinearEq, 1, "little <= tmp <= big: "
                  , little, " "
                  , tmp, " "
-                 , big, "\n");
-            Error("blerg");
+                 , big);
+            Error("This shouldn't happen");
         fi;
     od;
 end;
@@ -154,8 +140,8 @@ Ap := [[1/2, 1/3], [2,3], [5/2, 10/3]];
 
 b := [1,1];
 
-Read("pkg/A5Matrix.txt");
-Read("pkg/A5Vector.txt");
+Read("pkg/A6Matrix.txt");
+Read("pkg/A6Vector.txt");
 
 # I think I want to use row-major, which means variables are in
 # rows.
@@ -205,7 +191,8 @@ MakeIntSystem := function(mat, vec)
     local lcm, intmat, intvec;
 
     lcm := FindLCM(mat,vec);
-    Print("#I found lcm ", lcm, "\n");
+    Info(InfoMajoranaLinearEq, 5,
+         "found lcm ", lcm);
 
     return [lcm * mat, lcm * vec];
 end;
@@ -215,18 +202,23 @@ function(imat, p)
     local n, pmat, semiech, solvb;
 
     n := Length(imat);
-    Print("#I number of variables: ", n, "\n");
+    Info(InfoMajoranaLinearEq, 5,
+         "number of variables: ", n);
 
-    Print("#I reducing mod ", p, "\n");
+    Info(InfoMajoranaLinearEq, 5,
+         "reducing mod ", p);
     pmat := Z(p)^0 * imat;
 
-    Print("#I finding semiechelon form\n");
+    Info(InfoMajoranaLinearEq, 5,
+         "finding semiechelon form");
     semiech := SemiEchelonMatTransformation(pmat);
 
-    Print("#I selecting variables that have solution\n");
+    Info(InfoMajoranaLinearEq, 5,
+         "selecting variables that have solution");
     solvb := SelectSolvableVariables(semiech);
 
-    Print("#I number of solvable variables: ", Length(solvb), "\n");
+    Info(InfoMajoranaLinearEq, 5,
+        "number of solvable variables: ", Length(solvb));
 
     return rec( semiech := semiech, solvb := solvb );
 end;
@@ -272,8 +264,7 @@ end;
 #
 # In a "presolving" step, the matrix lA is reduced modulo the prime
 # p, put into semiechelon form and the variables for which a unique
-# solution exists are selected. (TODO: Describe how these are selected
-# those)
+# solution exists are selected. (TODO: Describe how these are selected)
 #
 # We then iterate solving  x(lA) = lb mod p, computing a p-adic expansion
 # of a solution to the system x(lA) = lb.
@@ -281,10 +272,13 @@ end;
 # the denominator of the solution. Once we have computed a denominator d,
 # we solve x(lA) = d(lb) for x, and return x/d as the result.
 #
+
+# TODO: Turn the Print("#I ") into proper info-levels
+# TODO: Find out why we drag around symmetric/non-symmetric solusitons
 InstallGlobalFunction(MAJORANA_SolutionIntMatVecs_Padic,
 function(intmat, intvec, p, max_iter)
     local pfam,
-          intsol,
+          intsol, intsolsym,
           intres, intressym,
           pre, pvec, pvecsym, solsym,
           done, nriter, coeffs, ppower, sol, x, y, i, dd,
@@ -292,10 +286,12 @@ function(intmat, intvec, p, max_iter)
 
     pfam := PurePadicNumberFamily(p, max_iter);
     intsol := [1..Length(intmat)] * 0;
+    intsolsym := [1..Length(intmat)] * 0;
     intres := MutableCopyMat(intvec);
     intressym := MutableCopyMat(intvec);
 
-    Print("#I Presolving...\n");
+    Info(InfoMajoranaLinearEq, 5,
+         "presolving...");
     pre := Presolve(intmat, p);
     pvec := Z(p)^0 * intres;
     pvecsym := Z(p)^0 * intressym;
@@ -321,40 +317,54 @@ function(intmat, intvec, p, max_iter)
             y := List(solsym[2], IntFFESymm);
 
             AddRowVector(intsol, x, ppower);
+            AddRowVector(intsolsym, y, ppower);
+
             for i in [1..Length(sol[2])] do
                 AddRowVector(intres, intmat[i], -x[i]);
                 AddRowVector(intressym, intmat[i], -y[i]);
             od;
 
-          #  Print("#I intsol: ", intsol, "\n");
-            Print("#I x:         ", x, " ", List(solsym[2], IntFFE), "\n");
-            Print("#I y:         ", y, " ", List(solsym[2], IntFFESymm), "\n");
-            Print("#I intres:    ", intres, "\n");
-            Print("#I intressym: ", intressym, "\n");
+            Info(InfoMajoranaLinearEq, 10, "intsol:    ", intsol);
+            Info(InfoMajoranaLinearEq, 10, "x:         ", x, " ", List(sol[2], IntFFESymm));
+            Info(InfoMajoranaLinearEq, 10, "y:         ", List(solsym[2], IntFFE), " ", y);
+            Info(InfoMajoranaLinearEq, 10, "intres:    ", intres);
+            Info(InfoMajoranaLinearEq, 10, "intsol:    ", intsol);
+            Info(InfoMajoranaLinearEq, 10, "intressym: ", intressym);
+            Info(InfoMajoranaLinearEq, 10, "intsolsym: ", intsolsym);
 
             # Solution found?
-            if IsZero(intres{pre.solvb}) then
-                Print("#I found an integer solution\n");
-                return [pre.solvb, intsol];
+            # TODO: Can we remove the pre.solvb?
+            if IsZero(intressym{pre.solvb}) then
+                Info(InfoMajoranaLinearEq, 5,
+                     "found an integer solution");
+                return [pre.solvb, intsolsym];
             else
                 if nriter > max_iter then
-                    Print("#I Trying to find denominator\n");
+                    Info(InfoMajoranaLinearEq, 5,
+                         "trying to compute denominator");
                     coeffs := TransposedMat(coeffs);
 
+                    # TODO: do we have to do them all?
+                    
                     dd := [];
                     for k in [1..Length(pre.solvb)] do
                         Add(dd, PadicDenominator(coeffs[pre.solvb[k]], p, nriter));
                     od;
                     denom := Lcm(dd);
 
-                    Print("#I Denominator: ", denom, "\n");
+                    Info(InfoMajoranaLinearEq, 5,
+                         "found denominator: ", denom);
                     if denom = 1 then
-                        Print("#I A denominator of 1 should not happen. Trying alternate solution method\n");
+                        Info(InfoMajoranaLinearEq, 5,
+                             "denominator of 1 should not happen, trying to solve using GAP's builtin method");
                         return [pre.solvb, SolutionIntMat(intmat, intvec), coeffs, intres, intsol];
-#                        return [pre.solvb, intsol, coeffs];
                     else
                         vecd := denom * intvec;
+                        # TODO: This is silly, if we are using the same parameters otherwise, we could just continue
+                        #       with all the precomputed data we already have.
                         sol := MAJORANA_SolutionIntMatVecs_Padic(intmat, vecd, p, max_iter);
+                        Info(InfoMajoranaLinearEq, 5,
+                             "calling  of 1 should not happen, trying to solve using GAP's builtin method");
                         return [pre.solvb, sol[2]/denom];
                     fi;
                 fi;
@@ -364,8 +374,8 @@ function(intmat, intvec, p, max_iter)
 
                 pvec := Z(p)^0 * intres;
                 pvecsym := Z(p)^0 * intressym;
-                Print("#I pvec:    ", pvec, "\n");
-                Print("#I pvecsym: ", pvecsym, "\n");
+                Info(InfoMajoranaLinearEq, 10, "pvec:    ", pvec);
+                Info(InfoMajoranaLinearEq, 10, "pvecsym: ", pvecsym);
                 ppower := ppower * p;
                 if nriter > max_iter then
                     Error("");
@@ -373,7 +383,8 @@ function(intmat, intvec, p, max_iter)
             fi;
         else
             # No rational solution exists
-            Print("#I There does not exist a rational solution\n");
+            Info(InfoMajoranaLinearEq, 5,
+                 "there does not exist a rational solution");
             return fail;
         fi;
     od;
@@ -386,14 +397,16 @@ function(mat, vec, p, max_iter)
     if not IsPrime(p) then
         Error("p has to be a prime");
     fi;
-    if max_iter < 1000 then
+    if max_iter < 100 then
         # TODO: Should probably make a better guess about the
         #       number of iterations or not try to restrict the
         #       user.
-        Print("#I Warning: using less that 1000 iterations is not recommended\n");
+        Info(InfoMajoranaLinearEq, 1,
+             "warning: using less that 100 iterations is not recommended");
     fi;
 
-    Print("#I number of variables: ", Length(mat), "\n");
+    Info(InfoMajoranaLinearEq, 5,
+         "number of variables: ", Length(mat), "\n");
     intsys := MakeIntSystem(mat, vec);
 
     return MAJORANA_SolutionIntMatVecs_Padic(intsys[1], intsys[2], p, max_iter);
