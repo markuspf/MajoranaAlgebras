@@ -162,7 +162,7 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs,
         m := Size(mat);
         n := Size(mat[1]);
 
-        res := SemiEchelonMatTransformationDestructive(mat);
+        res := SemiEchelonMatTransformation(mat);
         mat := List(res.vectors,ShallowCopy);
         vec := res.coeffs*vec;
         

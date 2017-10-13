@@ -135,27 +135,6 @@ PadicDenominator := function(number, p, precision)
     od;
 end;
 
-A := [[1/2, 1/3], [2,3]];
-Ap := [[1/2, 1/3], [2,3], [5/2, 10/3]];
-
-b := [1,1];
-
-Read("pkg/A6Matrix.txt");
-Read("pkg/A6Vector.txt");
-
-# I think I want to use row-major, which means variables are in
-# rows.
-
-tmat := TransposedMat(mat);
-tvec := TransposedMat(vec);
-tvec1 := tvec[1];
-
-sample1 := function()
-    return MAJORANA_SolutionMatVecs_Padic( [[1,0,1],[0,0,0],[1,0,0]]
-                                         , [0,0,1/3]
-                                         , 11, 100);
-end;
-
 # Select the variables that we can solve for
 # They are the ones that have no (possible) contribution 
 # from he Nullspace
