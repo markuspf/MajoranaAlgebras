@@ -1,4 +1,3 @@
-#
 # Solving linear equations over the integers/rationals by Dixon/Hensel lifting
 #
 # This is a GAP prototype which already works quite a bit faster than any code
@@ -13,6 +12,7 @@
 # * look at flint that has some of this functionality
 # * Implement in C or Rust (or Julia)?
 # * Parallelisation strategies
+# * use meataxe64
 #
 PadicList := function(padic)
     local result, n, p, r, i;
@@ -28,7 +28,7 @@ PadicList := function(padic)
     while n <> 0 do
         r := n mod p;
         Add(result, r);
-        n := (n - r)/p;
+        n := (n - r) / p;
     od;
 
     for i in [Length(result)+1..FamilyObj(padic)!.precision] do
@@ -134,7 +134,7 @@ PadicDenominator := function(number, p, precision)
         fi;
     od;
 end;
-
+   
 # Select the variables that we can solve for
 # They are the ones that have no (possible) contribution 
 # from he Nullspace
@@ -146,39 +146,48 @@ SelectSolvableVariables := function(semiech)
     fi;
 end;
 
-# This is ugly but reasonably fast
-FindLCM := function(mat, vec)
-    local row, e, lcm;
-
-    lcm := 1;
-    for row in mat do
-        for e in row do
-            if not IsZero(e) then
-                lcm := LcmInt(lcm, DenominatorRat(e));
-            fi;
-        od;
+# This is slightly prettier than before, and still reasonably fast
+_Fold := function(init, func, iterable)
+    local result, i;
+    result := init;
+    for i in iterable do
+        result := func(result, i);
     od;
-    for e in vec do
-        if not IsZero(e) then
-            lcm := LcmInt(lcm, DenominatorRat(e));
-        fi;
-    od;
-    return lcm;
+    return result;
 end;
 
-MakeIntSystem := function(mat, vec)
+_FoldMat := function(init, func, matrix)
+    return _Fold( init
+                , {v, row} -> _Fold(1, {v, entry} -> func(v, entry), row)
+                , matrix);
+end;
+
+FindLCM := function(mat, vecs)
+    local matlcm, row, e, lcm;
+
+    return LcmInt( _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), mat)
+                 , _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), vecs));
+end;
+
+MakeIntSystem := function(mat, vecs)
     local lcm, intmat, intvec;
 
-    lcm := FindLCM(mat,vec);
+    lcm := FindLCM(mat,vecs);
     Info(InfoMajoranaLinearEq, 5,
          "found lcm ", lcm);
 
-    return [lcm * mat, lcm * vec];
+    return [lcm * mat, lcm * vecs];
 end;
 
+# This puts the integer matrix imat into
+# semiechelon form modulo the integer p
+# TODO: This step could be done using meataxe64
 Presolve :=
 function(imat, p)
     local n, pmat, semiech, solvb;
+
+    Info(InfoMajoranaLinearEq, 5,
+         "presolving...");
 
     n := Length(imat);
     Info(InfoMajoranaLinearEq, 5,
@@ -202,163 +211,190 @@ function(imat, p)
     return rec( semiech := semiech, solvb := solvb );
 end;
 
+
+# WARNING: Distinction between "Solution" and "Solutions"
+# FIXME: Why is "selection" unused?
+#        The selection is a mask of variables that we hope
+#        to be solving for, so in principle (if that selection
+#        is small we could only add the selected entries)
+#        not entirely sure whether its worth it
 SelectedSolutionWithEchelonForm :=
 function(semiech, vec, selection)
-    local i, ncols, vno, x, z, row, lvec, sol;
+    local i, ncols, vno, x, z, residue, soln;
 
-    lvec := MutableCopyMat(vec);
     ncols := Length(vec);
-    z := Zero(semiech.vectors[1][1]);
-    sol := ListWithIdenticalEntries(Length(semiech.coeffs[1]), z);
-    ConvertToVectorRepNC(lvec);
-    ConvertToVectorRepNC(sol);
-    if ncols <> Length(semiech.heads) then
-        Error("");
-    fi;
+    residue := MutableCopyMat(vec);
+    ConvertToVectorRepNC(residue);
+    soln := ZeroMutable(residue);
+    ConvertToVectorRepNC(soln);
+
+    # "speed up" zero test
+    z := Zero(vec[1]);
 
     for i in [1..ncols] do
         vno := semiech.heads[i];
         if vno <> 0 then
-            x := lvec[i];
+            x := residue[i];
             if x <> z then
-                AddRowVector(lvec, semiech.vectors[vno], -x);
-                AddRowVector(sol, semiech.coeffs[vno], x);
+                AddRowVector(residue, semiech.vectors[vno], -x);
+                AddRowVector(soln, semiech.coeffs[vno], x);
             fi;
         fi;
     od;
-    return [lvec, sol];
+    return [residue, soln];
 end;
 
 
-
 #
-# This function tries to solve the system xA = b, where
-# A is a n x m matrix over the rational numbers, and b
-# is a vector of length m over the rationals.
+# This function tries to solve the systems xA = b_i for i in [1..k],
+# where A is an n x m matrix over the rational numbers, and b_i are
+# vectors of length m over the rationals.
 #
-# It first converts the system into an integer system by
+# We refer to b_i as "right-hand-side"
+#
+# We first convert the system into an integer system by
 # finding the LCM l of all denominators of all entries in A
-# and b. It is then true that any solution of x(lA) = lb is also
+# and all b_i.
+# It is then true that any (integer or rational) solution of x(lA) = lb is also
 # a solution of xA = b.
 #
 # In a "presolving" step, the matrix lA is reduced modulo the prime
 # p, put into semiechelon form and the variables for which a unique
-# solution exists are selected. (TODO: Describe how these are selected)
+# solution exists are selected. (FIXME: Describe how these are selected)
 #
 # We then iterate solving  x(lA) = lb mod p, computing a p-adic expansion
 # of a solution to the system x(lA) = lb.
-# Once we reach a number of digits (currently max_iter) we try to compute
-# the denominator of the solution. Once we have computed a denominator d,
-# we solve x(lA) = d(lb) for x, and return x/d as the result.
 #
-
-# TODO: Turn the Print("#I ") into proper info-levels
-# TODO: Find out why we drag around symmetric/non-symmetric solusitons
-InstallGlobalFunction(MAJORANA_SolutionIntMatVecs_Padic,
-function(intmat, intvec, p, max_iter)
+# If we find an integer solution, we return it, if we hit a pre-determined
+# number of digits, (currently max_iter) we try to compute the denominator
+# of that fraction. (FIXME: Describe how the denominator is computed)
+# If we computed a denominator d, we solve x(lA) = d(lb) for x
+# (which now has an integer solution), and return x/d as the result.
+#
+# We refer to
+#
+# FIXME: Find out why we have to drag around symmetric/non-symmetric variants
+#
+# TODO: Add a "guess"/prevalue for the denominator (eases solving for multiple b)
+#
+# FIXME: The parameter "mat" is probably not needed
+#
+InstallGlobalFunction(MAJORANA_SolutionIntMatVec_Padic,
+function(pre, mat, b, p, max_iter)
     local pfam,
-          intsol, intsolsym,
-          intres, intressym,
-          pre, pvec, pvecsym, solsym,
-          done, nriter, coeffs, ppower, sol, x, y, i, dd,
+
+          # These are *integer* vectors
+          soln, soln_sym,
+          residue, residue_sym,
+
+          # These are vectors in GF(p)
+          vec_p, vec_p_sym,
+          soln_p, soln_p_sym,
+
+          done, iterations, coeffs, ppower, sol, x, y, i,
           k, denom, vecd;
 
+    # FIXME: ?
     pfam := PurePadicNumberFamily(p, max_iter);
-    intsol := [1..Length(intmat)] * 0;
-    intsolsym := [1..Length(intmat)] * 0;
-    intres := MutableCopyMat(intvec);
-    intressym := MutableCopyMat(intvec);
 
-    Info(InfoMajoranaLinearEq, 5,
-         "presolving...");
-    pre := Presolve(intmat, p);
-    pvec := Z(p)^0 * intres;
-    pvecsym := Z(p)^0 * intressym;
+    # Accumulator for integer solution
+    soln := ZeroMutable(b);
+    soln_sym := ZeroMutable(b);
+
+    # These are the *integer* residuals of the RHS
+    residue := MutableCopyMat(b);
+    residue_sym := MutableCopyMat(b);
+
+    # These are the RHS b mod p
     done := false;
-    nriter := 0;
-    coeffs := [];
+    iterations := 0;
     ppower := 1;
+
+    # digits in the p-adic expansion of the approximation to the solution
+    # to xA = b
+    coeffs := [];
 
     #T just solve for the selected ones?
     while true do
-        nriter := nriter + 1;
-        sol := SelectedSolutionWithEchelonForm(pre.semiech, pvec, pre.solvb);
-        solsym := SelectedSolutionWithEchelonForm(pre.semiech, pvecsym, pre.solvb);
+        iterations := iterations + 1;
+
+        #
+        # solve the system mod p
+        # SelectedSolutionWithEchelonForm returns [ residue, soln ]
+        #
+        vec_p := Z(p)^0 * residue;
+        vec_p_sym := Z(p)^0 * residue_sym;
+
+        # Note that SelectedSolutionWithEchelonForm converts to vector rep
+        soln_p := SelectedSolutionWithEchelonForm(pre.semiech, vec_p, pre.solvb);
+        soln_p_sym := SelectedSolutionWithEchelonForm(pre.semiech, vec_p_sym, pre.solvb);
+
         # Here we should only be testing the solved variables?
-        if IsZero(sol[1]) then
-            #  intsol := p * intsol;
-            #T Matrix/vector op?
-            #T this is also reasonably ugly...
+        # if IsZero(soln[1]) then the residue is 0, hence we solved
+        if IsZero(soln_p[1]) then
+            # Convert the solution from GF(p) to integers 0..p-1 and -p/2..p/2-1
+            x := List(soln_p[2], IntFFE);
+            y := List(soln_p_sym[2], IntFFESymm);
 
-            Add(coeffs, List(sol[2], IntFFE));
+            # they are the coefficients of the p-adic expansion of the denominator
+            Add(coeffs, x);
 
-            x := List(sol[2], IntFFE);
-            y := List(solsym[2], IntFFESymm);
+            # FIXME: better way?
+            AddRowVector(soln, x, ppower);
+            AddRowVector(soln_sym, y, ppower);
 
-            AddRowVector(intsol, x, ppower);
-            AddRowVector(intsolsym, y, ppower);
-
-            for i in [1..Length(sol[2])] do
-                AddRowVector(intres, intmat[i], -x[i]);
-                AddRowVector(intressym, intmat[i], -y[i]);
+            for i in [1..Length(soln[2])] do
+                AddRowVector(residue, mat[i], -x[i]);
+                AddRowVector(residue_sym, mat[i], -y[i]);
             od;
 
-            Info(InfoMajoranaLinearEq, 10, "intsol:    ", intsol);
-            Info(InfoMajoranaLinearEq, 10, "x:         ", x, " ", List(sol[2], IntFFESymm));
-            Info(InfoMajoranaLinearEq, 10, "y:         ", List(solsym[2], IntFFE), " ", y);
-            Info(InfoMajoranaLinearEq, 10, "intres:    ", intres);
-            Info(InfoMajoranaLinearEq, 10, "intsol:    ", intsol);
-            Info(InfoMajoranaLinearEq, 10, "intressym: ", intressym);
-            Info(InfoMajoranaLinearEq, 10, "intsolsym: ", intsolsym);
+            Info(InfoMajoranaLinearEq, 10, "soln:        ", soln);
+            Info(InfoMajoranaLinearEq, 10, "soln_sym:    ", soln_sym);
+            Info(InfoMajoranaLinearEq, 10, "x:           ", x);
+            Info(InfoMajoranaLinearEq, 10, "y:           ", y);
+            Info(InfoMajoranaLinearEq, 10, "residue:     ", residue);
+            Info(InfoMajoranaLinearEq, 10, "residue_sym: ", residue_sym);
 
             # Solution found?
             # TODO: Can we remove the pre.solvb?
-            if IsZero(intressym{pre.solvb}) then
+            if IsZero(residue_sym{pre.solvb}) then
                 Info(InfoMajoranaLinearEq, 5,
                      "found an integer solution");
-                return [pre.solvb, intsolsym];
+                return [pre.solvb, soln_sym];
             else
-                if nriter > max_iter then
+                if iterations > max_iter then
                     Info(InfoMajoranaLinearEq, 5,
-                         "trying to compute denominator");
+                         "reached iteration limit, trying to compute denominator");
                     coeffs := TransposedMat(coeffs);
 
                     # TODO: do we have to do them all?
-                    
-                    dd := [];
+                    # FIXME:
+                    denom := 1;
                     for k in [1..Length(pre.solvb)] do
-                        Add(dd, PadicDenominator(coeffs[pre.solvb[k]], p, nriter));
+                        denom := LcmInt(denom, PadicDenominator(coeffs[pre.solvb[k]], p, iterations));
                     od;
-                    denom := Lcm(dd);
 
                     Info(InfoMajoranaLinearEq, 5,
                          "found denominator: ", denom);
                     if denom = 1 then
                         Info(InfoMajoranaLinearEq, 5,
                              "denominator of 1 should not happen, trying to solve using GAP's builtin method");
-                        return [pre.solvb, SolutionIntMat(intmat, intvec), coeffs, intres, intsol];
+                        return [pre.solvb, SolutionIntMat(mat, b), coeffs, residue, soln];
                     else
-                        vecd := denom * intvec;
                         # TODO: This is silly, if we are using the same parameters otherwise, we could just continue
                         #       with all the precomputed data we already have.
-                        sol := MAJORANA_SolutionIntMatVecs_Padic(intmat, vecd, p, max_iter);
                         Info(InfoMajoranaLinearEq, 5,
-                             "calling  of 1 should not happen, trying to solve using GAP's builtin method");
+                             "solving system after multiplying b by denominator.");
+                        soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, max_iter);
                         return [pre.solvb, sol[2]/denom];
                     fi;
                 fi;
 
-                intres := intres / p;
-                intressym := intressym / p;
+                # The residue better be divisible by p now.
+                residue := residue / p;
+                residue_sym := residue / p;
 
-                pvec := Z(p)^0 * intres;
-                pvecsym := Z(p)^0 * intressym;
-                Info(InfoMajoranaLinearEq, 10, "pvec:    ", pvec);
-                Info(InfoMajoranaLinearEq, 10, "pvecsym: ", pvecsym);
                 ppower := ppower * p;
-                if nriter > max_iter then
-                    Error("");
-                fi;
             fi;
         else
             # No rational solution exists
@@ -369,24 +405,24 @@ function(intmat, intvec, p, max_iter)
     od;
 end);
 
+# Solve for one right-hand-side
+InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
+                       { mat, b, p, max_iter } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], p, max_iter) );
+
+# Solve for multiple right-hand-sides
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
-function(mat, vec, p, max_iter)
-    local intsys;
+function(mat, vecs, p, max_iter)
+    local intsys, pre;
 
     if not IsPrime(p) then
         Error("p has to be a prime");
     fi;
-    if max_iter < 100 then
-        # TODO: Should probably make a better guess about the
-        #       number of iterations or not try to restrict the
-        #       user.
-        Info(InfoMajoranaLinearEq, 1,
-             "warning: using less that 100 iterations is not recommended");
-    fi;
 
     Info(InfoMajoranaLinearEq, 5,
          "number of variables: ", Length(mat), "\n");
-    intsys := MakeIntSystem(mat, vec);
+    intsys := MakeIntSystem(mat, vecs);
 
-    return MAJORANA_SolutionIntMatVecs_Padic(intsys[1], intsys[2], p, max_iter);
+    pre := Presolve(intsys[1]);
+
+    return List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
 end);
