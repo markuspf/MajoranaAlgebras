@@ -225,7 +225,9 @@ function(semiech, vec, selection)
     ncols := Length(vec);
     residue := MutableCopyMat(vec);
     ConvertToVectorRepNC(residue);
-    soln := ZeroMutable(residue);
+    # FIXME: If there are no coefficients then something
+    #        is wrong anyway
+    soln := ZeroMutable(semiech.coeffs[1]);
     ConvertToVectorRepNC(soln);
 
     # "speed up" zero test
@@ -298,10 +300,11 @@ function(pre, mat, b, p, max_iter)
     pfam := PurePadicNumberFamily(p, max_iter);
 
     # Accumulator for integer solution
-    soln := ZeroMutable(b);
-    soln_sym := ZeroMutable(b);
+    soln := ListWithIdenticalEntries(Length(mat), 0);
+    soln_sym := ListWithIdenticalEntries(Length(mat), 0);
 
     # These are the *integer* residuals of the RHS
+    # initially this is the RHS we're solving for
     residue := MutableCopyMat(b);
     residue_sym := MutableCopyMat(b);
 
@@ -317,6 +320,10 @@ function(pre, mat, b, p, max_iter)
     #T just solve for the selected ones?
     while true do
         iterations := iterations + 1;
+
+        if iterations mod 100 = 0 then
+            Info(InfoMajoranaLinearEq, 5, STRINGIFY(iterations, " iterations"));
+        fi;
 
         #
         # solve the system mod p
@@ -343,7 +350,7 @@ function(pre, mat, b, p, max_iter)
             AddRowVector(soln, x, ppower);
             AddRowVector(soln_sym, y, ppower);
 
-            for i in [1..Length(soln[2])] do
+            for i in [1..Length(mat)] do
                 AddRowVector(residue, mat[i], -x[i]);
                 AddRowVector(residue_sym, mat[i], -y[i]);
             od;
@@ -386,13 +393,13 @@ function(pre, mat, b, p, max_iter)
                         Info(InfoMajoranaLinearEq, 5,
                              "solving system after multiplying b by denominator.");
                         soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, max_iter);
-                        return [pre.solvb, sol[2]/denom];
+                        return [pre.solvb, soln[2]/denom];
                     fi;
                 fi;
 
                 # The residue better be divisible by p now.
                 residue := residue / p;
-                residue_sym := residue / p;
+                residue_sym := residue_sym / p;
 
                 ppower := ppower * p;
             fi;
@@ -422,7 +429,7 @@ function(mat, vecs, p, max_iter)
          "number of variables: ", Length(mat), "\n");
     intsys := MakeIntSystem(mat, vecs);
 
-    pre := Presolve(intsys[1]);
+    pre := Presolve(intsys[1], p);
 
     return List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
 end);
