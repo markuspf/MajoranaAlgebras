@@ -6,6 +6,7 @@
 # If you find any bugs, email markus.pfeiffer@morphism.de
 #
 # TODO:
+# * actually only solve the solvable variables.
 # * Make a better implementation of the padics code. Its currently pretty brittle
 #   and hacky
 # * More tests
@@ -114,7 +115,7 @@ PadicDenominator := function(number, p, precision)
         #      by looking at the p-adic norm and deciding whether number has converged
         if Length(PositionsProperty(tmp, x -> (x=0) or x = (p-1)))/Length(tmp) > 3/4 then
             if bigf + littlef = 2 then
-                Error("gcd is 2");
+                # Error("gcd is 2");
             fi;
             return bigf + littlef;
         fi;
@@ -134,17 +135,6 @@ PadicDenominator := function(number, p, precision)
         fi;
     od;
 end;
-   
-# Select the variables that we can solve for
-# They are the ones that have no (possible) contribution 
-# from he Nullspace
-SelectSolvableVariables := function(semiech)
-    if semiech.relations = [] then
-        return semiech.heads;
-    else
-        return PositionsProperty(TransposedMat(semiech.relations), IsZero);
-    fi;
-end;
 
 # This is slightly prettier than before, and still reasonably fast
 _Fold := function(init, func, iterable)
@@ -158,15 +148,34 @@ end;
 
 _FoldMat := function(init, func, matrix)
     return _Fold( init
-                , {v, row} -> _Fold(1, {v, entry} -> func(v, entry), row)
+                , {v, row} -> _Fold(init, {v, entry} -> func(v, entry), row)
                 , matrix);
 end;
+# FIXME: This does not work correctly...
+# function(mat, vecs)
+#    local matlcm, row, e, lcm;
+#
+#    return LcmInt( _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), mat)
+#                 , _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), vecs));
+#end;
+
 
 FindLCM := function(mat, vecs)
-    local matlcm, row, e, lcm;
+    local r, c, res;
+    res := 1;
 
-    return LcmInt( _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), mat)
-                 , _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), vecs));
+    for r in mat do
+        for c in r do
+            res := LcmInt(res, DenominatorRat(c));
+        od;
+    od;
+    for r in vecs do
+        for c in r do
+            res := LcmInt(res, DenominatorRat(c));
+        od;
+    od;
+
+    return res;
 end;
 
 MakeIntSystem := function(mat, vecs)
@@ -179,12 +188,57 @@ MakeIntSystem := function(mat, vecs)
     return [lcm * mat, lcm * vecs];
 end;
 
+# Just to make sure we're not shooting ourselves
+# in the foot with inconsistent entries.
+TestIntSystem := function(intsys)
+    local r, c;
+
+    Info(InfoMajoranaLinearEq, 5,
+         " testing integer system for integerness");
+    for r in intsys[1] do
+        for c in r do
+            if DenominatorRat(c) <> 1 then
+                Error(" /!\\ DENOMINATOR STILL NOT 1");
+            fi;
+        od;
+    od;
+    for r in intsys[2] do
+        for c in r do
+            if DenominatorRat(c) <> 1 then
+                Error(" /!\\ DENOMINATOR STILL NOT 1");
+            fi;
+        od;
+    od;
+    Info( InfoMajoranaLinearEq, 5,
+          " success.");
+end;
+
+SelectS := function(coeffs)
+    local i, n, vars, c;
+
+    vars := [];
+
+    n := Length(coeffs[1]);
+    for c in coeffs do
+        i := n;
+        while IsZero(c[i]) and i >= 0 do i := i - 1; od;
+        if i > 0 then
+            Add(vars, i);
+        else
+            # This shouldn't happen
+        fi;
+    od;
+    return vars;
+end;
+
+
+
 # This puts the integer matrix imat into
 # semiechelon form modulo the integer p
 # TODO: This step could be done using meataxe64
 Presolve :=
 function(imat, p)
-    local n, pmat, semiech, solvb;
+    local n, pmat, semiech, uniqvars, zeroablerhs;
 
     Info(InfoMajoranaLinearEq, 5,
          "presolving...");
@@ -194,6 +248,9 @@ function(imat, p)
          "number of variables: ", n);
 
     Info(InfoMajoranaLinearEq, 5,
+         "number of equations: ", Length(imat[1]));
+
+    Info(InfoMajoranaLinearEq, 5,
          "reducing mod ", p);
     pmat := Z(p)^0 * imat;
 
@@ -201,18 +258,21 @@ function(imat, p)
          "finding semiechelon form");
     semiech := SemiEchelonMatTransformation(pmat);
 
-    Info(InfoMajoranaLinearEq, 5,
-         "selecting variables that have solution");
-    solvb := SelectSolvableVariables(semiech);
+    uniqvars    := SelectS(semiech.coeffs);
+    # Difference([1..n], AsSet(Concatenation(List(semiech.relations, x -> PositionsProperty(x, y -> not IsZero(y))))));
+    zeroablerhs := PositionsProperty(semiech.heads, x -> not IsZero(x));
 
     Info(InfoMajoranaLinearEq, 5,
-        "number of solvable variables: ", Length(solvb));
+         "number of solvable variables: ", Length(uniqvars));
+    Info(InfoMajoranaLinearEq, 5,
+         "number of zeroable rhs:       ", Length(zeroablerhs));
 
-    return rec( semiech := semiech, solvb := solvb );
+    return rec( semiech := semiech
+              , uniqvars := uniqvars
+              , zeroablerhs := zeroablerhs );
 end;
 
 
-# WARNING: Distinction between "Solution" and "Solutions"
 # FIXME: Why is "selection" unused?
 #        The selection is a mask of variables that we hope
 #        to be solving for, so in principle (if that selection
@@ -243,7 +303,8 @@ function(semiech, vec, selection)
             fi;
         fi;
     od;
-    return [residue, soln];
+    return rec( residue := residue
+              , solution := soln );
 end;
 
 
@@ -281,9 +342,15 @@ end;
 #
 # FIXME: The parameter "mat" is probably not needed
 #
+# FIXME: Can we not just extract the solvable part of the equations and solve that?
+#
+# TODO:  Can we use the fact we found integer solutions for some variables
+#
 InstallGlobalFunction(MAJORANA_SolutionIntMatVec_Padic,
 function(pre, mat, b, p, max_iter)
-    local pfam,
+    local
+        # hack
+        nzh,
 
           # These are *integer* vectors
           soln, soln_sym,
@@ -296,9 +363,6 @@ function(pre, mat, b, p, max_iter)
           done, iterations, coeffs, ppower, sol, x, y, i,
           k, denom, vecd;
 
-    # FIXME: ?
-    pfam := PurePadicNumberFamily(p, max_iter);
-
     # Accumulator for integer solution
     soln := ListWithIdenticalEntries(Length(mat), 0);
     soln_sym := ListWithIdenticalEntries(Length(mat), 0);
@@ -308,14 +372,15 @@ function(pre, mat, b, p, max_iter)
     residue := MutableCopyMat(b);
     residue_sym := MutableCopyMat(b);
 
-    # These are the RHS b mod p
     done := false;
     iterations := 0;
-    ppower := 1;
+    ppower := 1; # this is p^iterations;
 
     # digits in the p-adic expansion of the approximation to the solution
     # to xA = b
     coeffs := [];
+    vec_p := residue * Z(p)^0;
+    vec_p_sym := residue_sym * Z(p)^0;
 
     #T just solve for the selected ones?
     while true do
@@ -325,23 +390,19 @@ function(pre, mat, b, p, max_iter)
             Info(InfoMajoranaLinearEq, 5, STRINGIFY(iterations, " iterations"));
         fi;
 
-        #
         # solve the system mod p
-        # SelectedSolutionWithEchelonForm returns [ residue, soln ]
-        #
         vec_p := Z(p)^0 * residue;
         vec_p_sym := Z(p)^0 * residue_sym;
 
         # Note that SelectedSolutionWithEchelonForm converts to vector rep
-        soln_p := SelectedSolutionWithEchelonForm(pre.semiech, vec_p, pre.solvb);
-        soln_p_sym := SelectedSolutionWithEchelonForm(pre.semiech, vec_p_sym, pre.solvb);
+        soln_p := SelectedSolutionWithEchelonForm(pre.semiech, vec_p, pre.uniqvars);
+        soln_p_sym := SelectedSolutionWithEchelonForm(pre.semiech, vec_p_sym, pre.uniqvars);
 
-        # Here we should only be testing the solved variables?
-        # if IsZero(soln[1]) then the residue is 0, hence we solved
-        if IsZero(soln_p[1]) then
+        if IsZero( soln_p.residue{ pre.zeroablerhs } ) then
+
             # Convert the solution from GF(p) to integers 0..p-1 and -p/2..p/2-1
-            x := List(soln_p[2], IntFFE);
-            y := List(soln_p_sym[2], IntFFESymm);
+            x := List(soln_p.solution, IntFFE);
+            y := List(soln_p_sym.solution, IntFFESymm);
 
             # they are the coefficients of the p-adic expansion of the denominator
             Add(coeffs, x);
@@ -363,11 +424,10 @@ function(pre, mat, b, p, max_iter)
             Info(InfoMajoranaLinearEq, 10, "residue_sym: ", residue_sym);
 
             # Solution found?
-            # TODO: Can we remove the pre.solvb?
-            if IsZero(residue_sym{pre.solvb}) then
+            if IsZero(residue_sym{ pre.zeroablerhs } ) then
                 Info(InfoMajoranaLinearEq, 5,
                      "found an integer solution");
-                return [pre.solvb, soln_sym];
+                return [pre.uniqvars, soln_sym];
             else
                 if iterations > max_iter then
                     Info(InfoMajoranaLinearEq, 5,
@@ -377,8 +437,8 @@ function(pre, mat, b, p, max_iter)
                     # TODO: do we have to do them all?
                     # FIXME:
                     denom := 1;
-                    for k in [1..Length(pre.solvb)] do
-                        denom := LcmInt(denom, PadicDenominator(coeffs[pre.solvb[k]], p, iterations));
+                    for k in [1..Length(pre.uniqvars)] do
+                        denom := LcmInt(denom, PadicDenominator(coeffs[pre.uniqvars[k]], p, iterations));
                     od;
 
                     Info(InfoMajoranaLinearEq, 5,
@@ -386,25 +446,27 @@ function(pre, mat, b, p, max_iter)
                     if denom = 1 then
                         Info(InfoMajoranaLinearEq, 5,
                              "denominator of 1 should not happen, trying to solve using GAP's builtin method");
-                        return [pre.solvb, SolutionIntMat(mat, b), coeffs, residue, soln];
+                        Error("why you little?");
+                        return [pre.uniqvars, SolutionIntMat(mat, b), coeffs, residue, soln];
                     else
                         # TODO: This is silly, if we are using the same parameters otherwise, we could just continue
                         #       with all the precomputed data we already have.
                         Info(InfoMajoranaLinearEq, 5,
                              "solving system after multiplying b by denominator.");
+
                         soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, max_iter);
-                        return [pre.solvb, soln[2]/denom];
+                        return [pre.uniqvars, soln[2]/denom];
                     fi;
                 fi;
 
                 # The residue better be divisible by p now.
-                residue := residue / p;
-                residue_sym := residue_sym / p;
+                residue{ pre.zeroablerhs } := residue{ pre.zeroablerhs } / p;
+                residue_sym{ pre.zeroablerhs } := residue_sym{ pre.zeroablerhs } / p;
 
                 ppower := ppower * p;
             fi;
         else
-            # No rational solution exists
+            Error("boop");
             Info(InfoMajoranaLinearEq, 5,
                  "there does not exist a rational solution");
             return fail;
@@ -425,9 +487,8 @@ function(mat, vecs, p, max_iter)
         Error("p has to be a prime");
     fi;
 
-    Info(InfoMajoranaLinearEq, 5,
-         "number of variables: ", Length(mat), "\n");
     intsys := MakeIntSystem(mat, vecs);
+    TestIntSystem(intsys);
 
     pre := Presolve(intsys[1], p);
 
