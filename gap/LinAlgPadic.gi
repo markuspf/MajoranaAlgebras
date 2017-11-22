@@ -6,6 +6,7 @@
 # If you find any bugs, email markus.pfeiffer@morphism.de
 #
 # TODO:
+# * Carry denominator forward
 # * actually only solve the solvable variables.
 # * Make a better implementation of the padics code. Its currently pretty brittle
 #   and hacky
@@ -336,7 +337,10 @@ end;
 #
 # We refer to
 #
-# FIXME: Find out why we have to drag around symmetric/non-symmetric variants
+# TODO:  return relations
+#
+# FIXME: Find out why we (whether we) have to drag around symmetric/non-symmetric
+#        variants
 #
 # TODO: Add a "guess"/prevalue for the denominator (eases solving for multiple b)
 #
@@ -349,9 +353,6 @@ end;
 InstallGlobalFunction(MAJORANA_SolutionIntMatVec_Padic,
 function(pre, mat, b, p, max_iter)
     local
-        # hack
-        nzh,
-
           # These are *integer* vectors
           soln, soln_sym,
           residue, residue_sym,
@@ -474,6 +475,28 @@ function(pre, mat, b, p, max_iter)
     od;
 end);
 
+InstallGlobalFunction( MAJORANA_NullspaceIntMat_Padic,
+function(mat, p)
+    local pre;
+
+    pre := Presolve(mat, p);
+    
+    
+
+end);
+
+InstallGlobalFunction( MAJORANA_NullspaceMat_Padic,
+function(mat, p)
+    local intsys;
+
+    intsys := MakeIntSystem(mat, [[]]);
+
+    # FIXME: maybe move this into a debug step in MakeIntSystem?
+    TestIntSystem(intsys);
+
+    return MAJORANA_NullspaceIntMat_Padic(intsys[1], p);
+end);
+
 # Solve for one right-hand-side
 InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
                        { mat, b, p, max_iter } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], p, max_iter) );
@@ -481,7 +504,7 @@ InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
 # Solve for multiple right-hand-sides
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
 function(mat, vecs, p, max_iter)
-    local intsys, pre;
+    local intsys, pre, v, sol, denom, sols;
 
     if not IsPrime(p) then
         Error("p has to be a prime");
