@@ -527,20 +527,28 @@ end;
 
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin,
 function(mat, vecs)
-    local res, tmat, tvecs, tsols;
+    local res, tmat, tvecs, tsols, intsys, pre, p, max_iter, i;
+
+    # FIXME: This needs to be either configurable, or even dynamic
+    p := 1949;
+    max_iter := 100;
 
     Info(InfoMajoranaLinearEq, 1, "Using p-adic expansion code...");
-
     res := rec();
 
     tmat := TransposedMat(mat);
     tvecs := TransposedMat(vecs);
 
-    # FIXME: We probably will have to either set some p-hint or try multiple
-    #        primes
-    tsols := MAJORANA_SolutionMatVecs_Padic(tmat, tvecs, 1949, 100);
+    intsys := MakeIntSystem(tmat, tvecs);
 
-    res.solutions := TransposedMat(tsols);
+    pre := Presolve(intsys[1], p);
+
+    tsols := List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
+
+    res.solutions := TransposedMatMutable(tsols);
+    for i in Difference([1..Length(res.solutions)], pre.uniqvars) do
+        res.solutions[i] := fail;
+    od;
 
     # FIXME: Extract relations
     res.relations := [[], []];
