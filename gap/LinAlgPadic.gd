@@ -27,3 +27,8 @@ DeclareInfoClass("InfoMajoranaLinearEq");
 DeclareGlobalFunction( "MAJORANA_SolutionMatVecs_Plugin" );
 DeclareGlobalFunction( "MAJORANA_NullspaceMat_Plugin" );
 
+# This activates some sanity checks
+# Setting this constant to false will
+# probably speed up the code a bit
+BindConstant("MAJORANA_LinAlg_Padic_Debug", true);
+

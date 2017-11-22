@@ -179,16 +179,6 @@ FindLCM := function(mat, vecs)
     return res;
 end;
 
-MakeIntSystem := function(mat, vecs)
-    local lcm, intmat, intvec;
-
-    lcm := FindLCM(mat,vecs);
-    Info(InfoMajoranaLinearEq, 5,
-         "found lcm ", lcm);
-
-    return [lcm * mat, lcm * vecs];
-end;
-
 # Just to make sure we're not shooting ourselves
 # in the foot with inconsistent entries.
 TestIntSystem := function(intsys)
@@ -213,6 +203,22 @@ TestIntSystem := function(intsys)
     Info( InfoMajoranaLinearEq, 5,
           " success.");
 end;
+
+MakeIntSystem := function(mat, vecs)
+    local lcm, intsys;
+
+    lcm := FindLCM(mat,vecs);
+    Info(InfoMajoranaLinearEq, 5,
+         "found lcm ", lcm);
+
+    intsys := [lcm * mat, lcm * vecs ];
+    if MAJORANA_LinAlg_Padic_Debug then
+        TestIntSystem(intsys);
+    fi;
+
+    return [lcm * mat, lcm * vecs];
+end;
+
 
 SelectS := function(coeffs)
     local i, n, vars, c;
@@ -487,9 +493,6 @@ function(mat, p)
 
     intsys := MakeIntSystem(mat, [[]]);
 
-    # FIXME: maybe move this into a debug step in MakeIntSystem?
-    TestIntSystem(intsys);
-
     return MAJORANA_NullspaceIntMat_Padic(intsys[1], p);
 end);
 
@@ -507,7 +510,6 @@ function(mat, vecs, p, max_iter)
     fi;
 
     intsys := MakeIntSystem(mat, vecs);
-    TestIntSystem(intsys);
 
     pre := Presolve(intsys[1], p);
 
@@ -518,7 +520,7 @@ end);
 
 ExtractRelations :=
 function(mat, pre)
-    return [[],[[]];
+    return [[],[]];
 end;
 
 ## Plug
