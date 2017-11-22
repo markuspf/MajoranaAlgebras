@@ -513,3 +513,35 @@ function(mat, vecs, p, max_iter)
 
     return List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
 end);
+
+
+
+ExtractRelations :=
+function(mat, pre)
+    return [[],[[]];
+end;
+
+## Plug
+
+InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin,
+function(mat, vecs)
+    local res, tmat, tvecs, tsols;
+
+    Info(InfoMajoranaLinearEq, 1, "Using p-adic expansion code...");
+
+    res := rec();
+
+    tmat := TransposedMat(tmat);
+    tvecs := TransposedMat(vecs);
+
+    # FIXME: We probably will have to either set some p-hint or try multiple
+    #        primes
+    tsols := MAJORANA_SolutionMatVecs_Padic(tmat, tvecs, 1949, 100);
+
+    res.solutions := TransposedMat(tsols);
+
+    # FIXME: Extract relations
+    res.relations := [[], []];
+
+    return res;
+end);
