@@ -66,4 +66,7 @@ DeclareInfoClass( "InfoMajorana" );
 
 DeclareInfoClass( "InfoMajoranaMainLoop" );
 
-
+# as a default we use rational number arithmetic to solve
+# equations in MAJORANA_AlgebraProduct
+BindGlobal( "MAJORANA_LinearSolver", MAJORANA_SolutionMatVecs);
+DeclareGlobalFunction( "MAJORANA_SelectLinearSolver" );

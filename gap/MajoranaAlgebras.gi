@@ -1452,3 +1452,11 @@ function(input,index)
     od;
     
     end );
+
+
+InstallGlobalFunction(MAJORANA_SelectLinearSolver,
+function(solver)
+    MakeReadWriteGlobal("MAJORANA_LinearSolver");
+    MAJORANA_LinearSolver := solver;
+    MakeReadOnlyGlobal("MAJORANA_LinearSolver");
+end);
