@@ -220,9 +220,11 @@ MakeIntSystem := function(mat, vecs)
 end;
 
 
-SelectS := function(coeffs)
-    local i, n, vars, c;
+# FIXME: This is ugly and inefficient
+SelectS := function(pre)
+    local i, j, n, vars, c, r, coeffs, nze;
 
+    coeffs := pre.semiech.coeffs;
     vars := [];
 
     n := Length(coeffs[1]);
@@ -230,12 +232,22 @@ SelectS := function(coeffs)
         i := n;
         while IsZero(c[i]) and i >= 0 do i := i - 1; od;
         if i > 0 then
-            Add(vars, i);
+            AddSet(vars, i);
         else
             # This shouldn't happen
         fi;
     od;
-    return vars;
+    pre.uniqvars := ShallowCopy(vars);
+
+    for r in pre.semiech.relations do
+        nze := PositionsProperty(r, x -> not IsZero(x));
+        for i in vars do
+            if i in nze then
+                SubtractSet(vars, nze);
+            fi;
+        od;
+    od;
+    pre.solvvars := ShallowCopy(vars);
 end;
 
 
@@ -245,7 +257,9 @@ end;
 # TODO: This step could be done using meataxe64
 Presolve :=
 function(imat, p)
-    local n, pmat, semiech, uniqvars, zeroablerhs;
+    local n, pmat, semiech, uniqvars, zeroablerhs, res;
+
+    res := rec();
 
     Info(InfoMajoranaLinearEq, 5,
          "presolving...");
@@ -263,20 +277,19 @@ function(imat, p)
 
     Info(InfoMajoranaLinearEq, 5,
          "finding semiechelon form");
-    semiech := SemiEchelonMatTransformation(pmat);
+    res.semiech := SemiEchelonMatTransformation(pmat);
 
-    uniqvars    := SelectS(semiech.coeffs);
-    # Difference([1..n], AsSet(Concatenation(List(semiech.relations, x -> PositionsProperty(x, y -> not IsZero(y))))));
-    zeroablerhs := PositionsProperty(semiech.heads, x -> not IsZero(x));
+    SelectS(res);
+    res.zeroablerhs := PositionsProperty(res.semiech.heads, x -> not IsZero(x));
 
     Info(InfoMajoranaLinearEq, 5,
-         "number of solvable variables: ", Length(uniqvars));
+         "number of solvable variables:   ", Length(res.uniqvars));
     Info(InfoMajoranaLinearEq, 5,
-         "number of zeroable rhs:       ", Length(zeroablerhs));
+         "number of returnable variables: ", Length(res.solvvars));
+    Info(InfoMajoranaLinearEq, 5,
+         "number of zeroable rhs:         ", Length(res.zeroablerhs));
 
-    return rec( semiech := semiech
-              , uniqvars := uniqvars
-              , zeroablerhs := zeroablerhs );
+    return res;
 end;
 
 
@@ -542,11 +555,18 @@ function(mat, vecs)
     intsys := MakeIntSystem(tmat, tvecs);
 
     pre := Presolve(intsys[1], p);
+    if pre.solvvars = [] then
+        res.solutions := ListWithIdenticalEntries(Length(tmat), fail);
+        res.mat := [];
+        res.vec := [];
+        return res;
+   fi;
 
     tsols := List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
 
     res.solutions := TransposedMatMutable(tsols);
-    for i in Difference([1..Length(res.solutions)], pre.uniqvars) do
+
+    for i in Difference([1..Length(res.solutions)], pre.solvvars) do
         res.solutions[i] := fail;
     od;
 
