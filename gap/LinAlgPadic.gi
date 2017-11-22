@@ -428,7 +428,7 @@ function(pre, mat, b, p, max_iter)
             if IsZero(residue_sym{ pre.zeroablerhs } ) then
                 Info(InfoMajoranaLinearEq, 5,
                      "found an integer solution");
-                return [pre.uniqvars, soln_sym];
+                return soln_sym;
             else
                 if iterations > max_iter then
                     Info(InfoMajoranaLinearEq, 5,
@@ -446,9 +446,8 @@ function(pre, mat, b, p, max_iter)
                          "found denominator: ", denom);
                     if denom = 1 then
                         Info(InfoMajoranaLinearEq, 5,
-                             "denominator of 1 should not happen, trying to solve using GAP's builtin method");
-                        Error("why you little?");
-                        return [pre.uniqvars, SolutionIntMat(mat, b), coeffs, residue, soln];
+                             "denominator 1 should not happen, trying to solve using GAP's builtin method");
+                        return SolutionIntMat(mat, b);
                     else
                         # TODO: This is silly, if we are using the same parameters otherwise, we could just continue
                         #       with all the precomputed data we already have.
@@ -456,7 +455,7 @@ function(pre, mat, b, p, max_iter)
                              "solving system after multiplying b by denominator.");
 
                         soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, max_iter);
-                        return [pre.uniqvars, soln[2]/denom];
+                        return soln / denom;
                     fi;
                 fi;
 
@@ -467,7 +466,6 @@ function(pre, mat, b, p, max_iter)
                 ppower := ppower * p;
             fi;
         else
-            Error("boop");
             Info(InfoMajoranaLinearEq, 5,
                  "there does not exist a rational solution");
             return fail;
@@ -480,8 +478,6 @@ function(mat, p)
     local pre;
 
     pre := Presolve(mat, p);
-    
-    
 
 end);
 
