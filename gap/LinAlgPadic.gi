@@ -533,7 +533,7 @@ function(mat, vecs)
 
     res := rec();
 
-    tmat := TransposedMat(tmat);
+    tmat := TransposedMat(mat);
     tvecs := TransposedMat(vecs);
 
     # FIXME: We probably will have to either set some p-hint or try multiple
