@@ -1087,7 +1087,7 @@ InstallGlobalFunction( MAJORANA_SolutionAlgProducts,
     Info(   InfoMajorana, 40, 
             STRINGIFY("Solving a ", Size(mat), " x ", Size(mat[1]), " matrix") );
 
-    sol := MAJORANA_SolutionMatVecs(mat,vec);
+    sol := MAJORANA_LinearSolver(mat,vec);
     
     Info(   InfoMajorana, 40, "Solved it!" );
     
