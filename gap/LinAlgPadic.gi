@@ -571,7 +571,8 @@ function(mat, vecs)
     od;
 
     # FIXME: Extract relations
-    res.relations := [[], []];
+    res.mat := [];
+    res.vec := [];
 
     return res;
 end);
