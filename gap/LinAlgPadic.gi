@@ -221,6 +221,7 @@ end;
 
 
 # FIXME: This is ugly and inefficient
+#        and possibly still not quite right
 SelectS := function(pre)
     local i, j, n, vars, c, r, coeffs, nze;
 
@@ -447,7 +448,7 @@ function(pre, mat, b, p, max_iter)
             if IsZero(residue_sym{ pre.zeroablerhs } ) then
                 Info(InfoMajoranaLinearEq, 5,
                      "found an integer solution");
-                return soln_sym;
+                return [soln_sym, 1];
             else
                 if iterations > max_iter then
                     Info(InfoMajoranaLinearEq, 5,
@@ -466,7 +467,7 @@ function(pre, mat, b, p, max_iter)
                     if denom = 1 then
                         Info(InfoMajoranaLinearEq, 5,
                              "denominator 1 should not happen, trying to solve using GAP's builtin method");
-                        return SolutionIntMat(mat, b);
+                        return [SolutionIntMat(mat, b), 1];
                     else
                         # TODO: This is silly, if we are using the same parameters otherwise, we could just continue
                         #       with all the precomputed data we already have.
@@ -474,7 +475,7 @@ function(pre, mat, b, p, max_iter)
                              "solving system after multiplying b by denominator.");
 
                         soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, max_iter);
-                        return soln / denom;
+                        return [ soln[1] / denom, denom ];
                     fi;
                 fi;
 
@@ -540,10 +541,10 @@ end;
 
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin,
 function(mat, vecs)
-    local res, tmat, tvecs, tsols, intsys, pre, p, max_iter, i;
+    local res, tmat, tvecs, tsols, intsys, pre, p, max_iter, i, v, sl, denom, unsol;
 
     # FIXME: This needs to be either configurable, or even dynamic
-    p := 1949;
+    p := NextPrimeInt(191);
     max_iter := 100;
 
     Info(InfoMajoranaLinearEq, 1, "Using p-adic expansion code...");
@@ -562,7 +563,16 @@ function(mat, vecs)
         return res;
    fi;
 
-    tsols := List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
+    tsols := [];
+    # FIXME: This is a bit ugly: we thread the denominator through
+    #        the loop to avoid recomputing denominators (because its expensive)
+    denom := 1;
+    sl := [,1];
+    for v in intsys[2] do
+        denom := LcmInt(denom, sl[2]);
+        sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, p, max_iter);
+        Add(tsols, sl[1] / denom);
+    od;
 
     res.solutions := TransposedMatMutable(tsols);
 
@@ -571,8 +581,9 @@ function(mat, vecs)
     od;
 
     # FIXME: Extract relations
-    res.mat := [];
-    res.vec := [];
+    unsol := Difference([1..Length(mat)], pre.zeroablerhs);
+    res.mat := mat{ unsol };
+    res.vec := vecs{ unsol };
 
     return res;
 end);
