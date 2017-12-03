@@ -160,23 +160,51 @@ end;
 #                 , _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), vecs));
 #end;
 
+_FoldList2 := function(list, func, op)
+    local k, s, old_s, r, i, len, n, nh, res;
+
+
+    len := Length(list);
+    if len = 0 then
+        return 1;
+    elif len = 1 then
+        return list[1];
+    fi;
+
+    res := List(list, func);
+    k := len;
+    s := 1;
+    while k > 1 do
+        r := k mod 2;
+        old_s := s;
+        k := QuoInt(k, 2);
+        s := s * 2;
+        i := s;
+        while i <= k * s do
+            res[i] := op(res[i-old_s], res[i]);
+            res[i-old_s] := 0;
+            i := i + s;
+        od;
+        if r = 1 then
+            k := k + 1;
+            res[i] := res[i-old_s];
+        fi;
+    od;
+    return res[ k * s ];
+end;
+
 
 FindLCM := function(mat, vecs)
-    local r, c, res;
-    res := 1;
+    local r, res;
 
+    res := [];
     for r in mat do
-        for c in r do
-            res := LcmInt(res, DenominatorRat(c));
-        od;
+        Add(res, _FoldList2(r, DenominatorRat, LcmInt));
     od;
     for r in vecs do
-        for c in r do
-            res := LcmInt(res, DenominatorRat(c));
-        od;
+        Add(res, _FoldList2(r, DenominatorRat, LcmInt));
     od;
-
-    return res;
+    return _FoldList2(res, IdFunc, LcmInt);
 end;
 
 # Just to make sure we're not shooting ourselves
@@ -204,19 +232,20 @@ TestIntSystem := function(intsys)
           " success.");
 end;
 
+# FIXME: We don't bother with the LCM for the time being
 MakeIntSystem := function(mat, vecs)
-    local lcm, intsys;
+    local mult, intsys;
 
-    lcm := FindLCM(mat,vecs);
+    mult := FindLCM(mat, vecs);
     Info(InfoMajoranaLinearEq, 5,
-         "found lcm ", lcm);
+         "using lcm ", mult, " as multiplier");
 
-    intsys := [lcm * mat, lcm * vecs ];
+    intsys := [mult * mat, mult * vecs ];
     if MAJORANA_LinAlg_Padic_Debug then
         TestIntSystem(intsys);
     fi;
 
-    return [lcm * mat, lcm * vecs];
+    return intsys;
 end;
 
 
