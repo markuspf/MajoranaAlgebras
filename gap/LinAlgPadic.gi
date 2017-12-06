@@ -1,3 +1,102 @@
+
+_FoldList2 := function(list, func, op)
+    local k, s, old_s, r, i, len, n, nh, res, r1, r2;
+
+
+    len := Length(list);
+    if len = 0 then
+        return 1;
+    elif len = 1 then
+        return list[1];
+    fi;
+
+    res := List(list, func);
+    k := len;
+    s := 1;
+    while k > 1 do
+        r := k mod 2;
+        old_s := s;
+        k := QuoInt(k, 2);
+        s := s * 2;
+        i := s;
+        while i <= k * s do
+            if IsBound(res[i-old_s]) then
+                r1 := res[i-old_s];
+            else
+                r1 := 1;
+            fi;
+            if IsBound(res[i]) then
+                r2 := res[i];
+            else
+                r2 := 1;
+            fi;
+            res[i] := op(r1, r2);
+            res[i-old_s] := 0;
+            i := i + s;
+        od;
+        if r = 1 then
+            k := k + 1;
+            res[i] := res[i-old_s];
+        fi;
+    od;
+    return res[ k * s ];
+end;
+
+
+# FIXME: Prototype sparse matrices using hash tables
+
+#InstallGlobalFunction(NewSparseMatrix,
+#function(ring, rowc, colc)
+#    return Objectify(SparseMatrixType, [ring, rowc, colc, false, HashMap()]);
+#end);
+#
+#InstallOtherMethod( \[\], "for a sparse matrix, an index, and an index"
+#               , [ IsSparseMatrixRep, IsPosInt, IsPosInt ],
+#function(m, i, j)
+#    local idx;
+#    if m![4] then
+#        idx := [i, j];
+#    else
+#        idx := [j, i];
+#    fi;
+#    if idx in m![5] then
+#        return m![5][idx];
+#    else
+#        return Zero(m![1]);
+#    fi;
+#end);
+#
+#InstallOtherMethod( \[\]\:\=, "for a sparse matrix, an index, and an index"
+#                    , [ IsSparseMatrixRep, IsPosInt, IsPosInt, IsObject ],
+#function(m, i, j, val)
+#    local idx;
+#    if m![4] then
+#        idx := [i, j];
+#    else
+#        idx := [j, i];
+#    fi;
+#    m![5][idx] := val;
+#end);
+#
+#InstallGlobalFunction( LcmOfDenominators,
+#function(mat)
+#    return _FoldList2(mat![5]![6], DenominatorRat, LcmInt);
+#end);
+#
+#InstallMethod( ViewString, "", [IsSparseMatrixRep],
+#function(mat)
+#    return STRINGIFY( "<a sparse hashtable "
+#                    , mat![2], "x", mat![3]
+#                    , " matrix over "
+#                    , ViewString(mat![1]), ">");
+#end);
+#
+#InstallMethod( ViewObj, "", [IsSparseMatrixRep],
+#function(mat)
+#    Print(ViewString(mat));
+#end);
+#
+
 # Solving linear equations over the integers/rationals by Dixon/Hensel lifting
 #
 # This is a GAP prototype which already works quite a bit faster than any code
@@ -51,6 +150,7 @@ PadicDenominator := function(number, p, precision)
         , tmpl
         , retv
         , n
+        , biggest
         , PadicList, PadicLess, PadicAdd, PadicAssert;
     PadicAssert := function(number)
         if ForAny(number{[1..precision-1]}, x -> x >= p) then
@@ -90,12 +190,16 @@ PadicDenominator := function(number, p, precision)
                 r[i] := r[i] - p;
             od;
         od;
+        r[Length(r)] := 0;
+        
         return r;
     end;
 
     if Length(PositionsProperty(number, x -> (x=0) or x = (p-1)))/Length(number) > 3/4 then
         return 1;
     fi;
+
+    biggest := 0.0;
 
     little := number;
     littlef := 1;
@@ -108,13 +212,15 @@ PadicDenominator := function(number, p, precision)
 
         tmp := PadicAdd(little, big);
 
+        biggest := Maximum(biggest, Maximum( Float(Length(PositionsProperty(tmp, x -> (x=(p-1))))/Length(tmp)),
+                                         Float(Length(PositionsProperty(tmp, x -> (x=0)))/Length(tmp) ) ) );
         Info(InfoMajoranaPadics, 10,
              STRINGIFY(Float(Length(PositionsProperty(tmp, x -> (x=0)))/Length(tmp)), " ",
                        Float(Length(PositionsProperty(tmp, x -> (x=(p-1))))/Length(tmp)), "\n"));
 
         # TODO better check that this is *Exact*
         #      by looking at the p-adic norm and deciding whether number has converged
-        if Length(PositionsProperty(tmp, x -> (x=0) or x = (p-1)))/Length(tmp) > 3/4 then
+        if Length(PositionsProperty(tmp, x -> (x=0) or x = (p-1)))/Length(tmp) > 7/10 then
             if bigf + littlef = 2 then
                 # Error("gcd is 2");
             fi;
@@ -159,39 +265,6 @@ end;
 #    return LcmInt( _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), mat)
 #                 , _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), vecs));
 #end;
-
-_FoldList2 := function(list, func, op)
-    local k, s, old_s, r, i, len, n, nh, res;
-
-
-    len := Length(list);
-    if len = 0 then
-        return 1;
-    elif len = 1 then
-        return list[1];
-    fi;
-
-    res := List(list, func);
-    k := len;
-    s := 1;
-    while k > 1 do
-        r := k mod 2;
-        old_s := s;
-        k := QuoInt(k, 2);
-        s := s * 2;
-        i := s;
-        while i <= k * s do
-            res[i] := op(res[i-old_s], res[i]);
-            res[i-old_s] := 0;
-            i := i + s;
-        od;
-        if r = 1 then
-            k := k + 1;
-            res[i] := res[i-old_s];
-        fi;
-    od;
-    return res[ k * s ];
-end;
 
 
 FindLCM := function(mat, vecs)
@@ -281,6 +354,28 @@ SelectS := function(pre)
 end;
 
 
+ConvertSparse := function(smat, p)
+   local m, r, i, j, m2, maxrow, maxcol;
+
+   maxrow := Maximum(List(smat![5]![5], x -> x[1]));
+   maxcol := Maximum(List(smat![5]![5], x -> x[2]));
+   Print("nonzero: ", maxrow, ", ", maxcol, "\n");
+
+   Print("creating non-sparse primefield mat\n");
+   r := ListWithIdenticalEntries(maxcol, Zero(GF(p)));
+   ConvertToVectorRep(r);
+   m := [];
+   for i in [1..maxrow] do
+      m[i] := ShallowCopy(r);
+   od;
+
+   Print("copy & convert to prime field mat\n");
+   for i in mat![5]![5] do
+       m[i[1],i[2]] := mat![5][i] * One(GF(p));
+   od;
+
+   return m;
+end;
 
 # This puts the integer matrix imat into
 # semiechelon form modulo the integer p
@@ -572,12 +667,14 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin,
 function(mat, vecs)
     local res, tmat, tvecs, tsols, intsys, pre, p, max_iter, i, v, sl, denom, unsol;
 
-    # FIXME: This needs to be either configurable, or even dynamic
-    p := NextPrimeInt(191);
-    max_iter := 100;
+    p := MAJORANA_LinAlg_Padic_Prime;
+    max_iter := MAJORANA_LinAlg_Padic_Iterations;
 
     Info(InfoMajoranaLinearEq, 1, "Using p-adic expansion code...");
-    res := rec();
+    Info(InfoMajoranaLinearEq, 1, " ", Length(mat[1]), " variables");
+    Info(InfoMajoranaLinearEq, 1, " ", Length(mat), " equations");
+
+    res := rec( );
 
     tmat := TransposedMat(mat);
     tvecs := TransposedMat(vecs);
@@ -590,7 +687,7 @@ function(mat, vecs)
         res.mat := [];
         res.vec := [];
         return res;
-   fi;
+    fi;
 
     tsols := [];
     # FIXME: This is a bit ugly: we thread the denominator through

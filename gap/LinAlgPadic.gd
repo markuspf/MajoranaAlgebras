@@ -31,4 +31,16 @@ DeclareGlobalFunction( "MAJORANA_NullspaceMat_Plugin" );
 # Setting this constant to false will
 # probably speed up the code a bit
 BindConstant("MAJORANA_LinAlg_Padic_Debug", true);
+BindGlobal("MAJORANA_LinAlg_Padic_Iterations", 100);
+BindGlobal("MAJORANA_LinAlg_Padic_Prime", 193);
+
+
+# DeclareCategory( "IsSparseMatrix", IsObject and IsList ); # really IsMatrixObj, but that doen't exist.
+# DeclareRepresentation( "IsSparseMatrixRep", IsSparseMatrix and IsPositionalObjectRep, [] );
+
+# BindGlobal("SparseMatrixType", NewType( NewFamily("IsSparseMatrixFamily", IsSparseMatrix)
+#                                      , IsSparseMatrix and IsSparseMatrixRep and IsMutable ));
+
+# DeclareGlobalFunction( "NewSparseMatrix" );
+# DeclareGlobalFunction( "LcmOfDenominators" );
 
