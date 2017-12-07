@@ -451,12 +451,10 @@ function(pre, mat, b, p, max_iter)
           k, denom, vecd;
 
     # Accumulator for integer solution
-    soln := ListWithIdenticalEntries(Length(mat), 0);
     soln_sym := ListWithIdenticalEntries(Length(mat), 0);
 
     # These are the *integer* residuals of the RHS
     # initially this is the RHS we're solving for
-    residue := MutableCopyMat(b);
     residue_sym := MutableCopyMat(b);
 
     done := false;
@@ -465,12 +463,9 @@ function(pre, mat, b, p, max_iter)
 
     # digits in the p-adic expansion of the approximation to the solution
     # to xA = b
-    coeffs := [];
-    coeffs_sym := [];
     fam := PurePadicNumberFamily(p, max_iter);
     coeffs_padic := List([1..Length(mat)], x -> PadicNumber(fam, 0));
 
-    vec_p := residue * Z(p)^0;
     vec_p_sym := residue_sym * Z(p)^0;
 
     #T just solve for the selected ones?
@@ -482,38 +477,28 @@ function(pre, mat, b, p, max_iter)
         fi;
 
         # solve the system mod p
-        vec_p := Z(p)^0 * residue;
         vec_p_sym := Z(p)^0 * residue_sym;
 
         # Note that SelectedSolutionWithEchelonForm converts to vector rep
-        soln_p := SelectedSolutionWithEchelonForm(pre.semiech, vec_p, pre.uniqvars);
         soln_p_sym := SelectedSolutionWithEchelonForm(pre.semiech, vec_p_sym, pre.uniqvars);
 
         if IsZero( soln_p_sym.residue{ pre.zeroablerhs } ) then
 
             # Convert the solution from GF(p) to integers 0..p-1 and -p/2..p/2-1
-            x := List(soln_p.solution, IntFFE);
             y := List(soln_p_sym.solution, IntFFESymm);
 
             # they are the coefficients of the p-adic expansion of the denominator
-            Add(coeffs, x);
-            Add(coeffs_sym, y);
             coeffs_padic := coeffs_padic + List(y, c -> PadicNumber(fam, c * ppower));
 
             # FIXME: better way?
-            AddRowVector(soln, x, ppower);
             AddRowVector(soln_sym, y, ppower);
 
             for i in [1..Length(mat)] do
-                AddRowVector(residue, mat[i], -x[i]);
                 AddRowVector(residue_sym, mat[i], -y[i]);
             od;
 
-            Info(InfoMajoranaLinearEq, 10, "soln:        ", soln);
             Info(InfoMajoranaLinearEq, 10, "soln_sym:    ", soln_sym);
-            Info(InfoMajoranaLinearEq, 10, "x:           ", x);
             Info(InfoMajoranaLinearEq, 10, "y:           ", y);
-            Info(InfoMajoranaLinearEq, 10, "residue:     ", residue);
             Info(InfoMajoranaLinearEq, 10, "residue_sym: ", residue_sym);
 
             # Solution found?
@@ -525,14 +510,12 @@ function(pre, mat, b, p, max_iter)
                 if iterations > max_iter then
                     Info(InfoMajoranaLinearEq, 5,
                          "reached iteration limit, trying to compute denominator");
-        #             coeffs := TransposedMat(coeffs);
 
                     # TODO: do we have to do them all?
                     # FIXME:
                     denom := 1;
                     for k in [1..Length(pre.uniqvars)] do
-#                        denom := LcmInt(denom, PadicDenominatorPadic(coeffs[pre.uniqvars[k]], p, iterations));
-                        denom := LcmInt(denom, PadicDenominatorPadic(denom * coeffs_padic[pre.uniqvars[k]]));
+                        denom := LcmInt(denom, PadicDenominator(denom * coeffs_padic[pre.uniqvars[k]]));
                     od;
 
                     Info(InfoMajoranaLinearEq, 5,
@@ -553,7 +536,6 @@ function(pre, mat, b, p, max_iter)
                 fi;
 
                 # The residue better be divisible by p now.
-                residue{ pre.zeroablerhs } := residue{ pre.zeroablerhs } / p;
                 residue_sym{ pre.zeroablerhs } := residue_sym{ pre.zeroablerhs } / p;
 
                 ppower := ppower * p;
