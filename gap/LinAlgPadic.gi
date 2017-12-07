@@ -534,7 +534,7 @@ function(pre, mat, b, p, max_iter)
                              "solving system after multiplying b by denominator.");
 
                         soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, max_iter);
-                        return [ soln[1] / denom, denom ];
+                        return [ soln[1] / denom, soln[2] * denom ];
                     fi;
                 fi;
 
@@ -630,6 +630,7 @@ function(mat, vecs)
     sl := [,1];
     for v in intsys[2] do
         denom := LcmInt(denom, sl[2]);
+        Print("using denominator: ", denom, "\n");
         sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, p, max_iter);
         Add(tsols, sl[1] / denom);
     od;
