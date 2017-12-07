@@ -138,6 +138,76 @@ PadicList := function(padic)
     return result{[1..FamilyObj(padic)!.precision]};
 end;
 
+PadicLess := function(a, b, precision)
+    local i;
+
+    # Should be precision
+    for i in [precision-1, precision-2..1] do
+        if a[i] < b[i] then
+            return true;
+        elif a[i] > b[i] then
+            return false;
+        fi;
+    od;
+    return true;
+end;
+
+PadicDenominatorPadic := function(number)
+    local n, thresh, tmp, big, little, bigf, littlef, biggest, prec;
+
+    prec := FamilyObj(number)!.precision;
+
+    # Threshold where we consider something an integer
+    # This should probably not be computed every time
+    thresh := FamilyObj(number)!.prime ^ QuoInt(prec, 10);
+
+    # We regard this number as integer
+    if (number![2] < thresh) or
+       ((PadicNumber(FamilyObj(number), -1) * number)![2] < thresh) then
+        return 1;
+    fi;
+
+    little := number;
+    littlef := 1;
+    big := number;
+    bigf := 1;
+
+    n := 0;
+    while true do
+        n := n + 1;
+
+        tmp := little + big;
+        Info(InfoMajoranaPadics, 10
+             , " lf: ", String(littlef, 16)
+             , " bf: ", String(bigf, 16), "\n");
+
+        # TODO: stop condition
+        # this means that coefficients a_k for p^k are
+        # 0 for all k > thresh
+        if (tmp![2] < thresh) or
+           ((PadicNumber(FamilyObj(tmp), -1) * tmp)![2] < thresh) then
+            if bigf + littlef = 2 then
+                # Error("gcd is 2");
+            fi;
+            return bigf + littlef;
+        fi;
+
+        if PadicLess(PadicList(tmp), PadicList(little), prec) then
+            little := tmp;
+            littlef := bigf + littlef;
+        elif PadicLess(PadicList(big), PadicList(tmp), prec) then
+            big := tmp;
+            bigf := bigf + littlef;
+        else
+            Info(InfoMajoranaLinearEq, 1, "little <= tmp <= big: "
+                 , little, " "
+                 , tmp, " "
+                 , big);
+            Error("This shouldn't happen");
+        fi;
+    od;
+end;
+
 PadicDenominator := function(number, p, precision)
     local big
         , little
@@ -153,7 +223,7 @@ PadicDenominator := function(number, p, precision)
         , biggest
         , PadicList, PadicLess, PadicAdd, PadicAssert;
     PadicAssert := function(number)
-        if ForAny(number{[1..precision-1]}, x -> x >= p) then
+        if ForAny(number{[1..precision-1]}, x -> (x < 0) or (x >= p)) then
             Error("invalid p-adic rep");
         fi;
     end;
@@ -494,6 +564,17 @@ end;
 #
 # TODO:  Can we use the fact we found integer solutions for some variables
 #
+CoeffTest := function(p, a,b)
+    local i;
+
+    for i in [1..Length(b)] do
+        if a[i] = b[i] or a[i] = b[i] + p then
+        else
+            Error("check");
+        fi;
+    od;
+end;
+
 InstallGlobalFunction(MAJORANA_SolutionIntMatVec_Padic,
 function(pre, mat, b, p, max_iter)
     local
@@ -505,7 +586,8 @@ function(pre, mat, b, p, max_iter)
           vec_p, vec_p_sym,
           soln_p, soln_p_sym,
 
-          done, iterations, coeffs, ppower, sol, x, y, i,
+          done, iterations, coeffs, coeffs_sym, coeffs_padic, fam,
+          ppower, sol, x, y, i,
           k, denom, vecd;
 
     # Accumulator for integer solution
@@ -524,6 +606,10 @@ function(pre, mat, b, p, max_iter)
     # digits in the p-adic expansion of the approximation to the solution
     # to xA = b
     coeffs := [];
+    coeffs_sym := [];
+    fam := PurePadicNumberFamily(p, max_iter);
+    coeffs_padic := List([1..Length(mat)], x -> PadicNumber(fam, 0));
+
     vec_p := residue * Z(p)^0;
     vec_p_sym := residue_sym * Z(p)^0;
 
@@ -543,7 +629,7 @@ function(pre, mat, b, p, max_iter)
         soln_p := SelectedSolutionWithEchelonForm(pre.semiech, vec_p, pre.uniqvars);
         soln_p_sym := SelectedSolutionWithEchelonForm(pre.semiech, vec_p_sym, pre.uniqvars);
 
-        if IsZero( soln_p.residue{ pre.zeroablerhs } ) then
+        if IsZero( soln_p_sym.residue{ pre.zeroablerhs } ) then
 
             # Convert the solution from GF(p) to integers 0..p-1 and -p/2..p/2-1
             x := List(soln_p.solution, IntFFE);
@@ -551,6 +637,8 @@ function(pre, mat, b, p, max_iter)
 
             # they are the coefficients of the p-adic expansion of the denominator
             Add(coeffs, x);
+            Add(coeffs_sym, y);
+            coeffs_padic := coeffs_padic + List(y, c -> PadicNumber(fam, c * ppower));
 
             # FIXME: better way?
             AddRowVector(soln, x, ppower);
@@ -577,13 +665,14 @@ function(pre, mat, b, p, max_iter)
                 if iterations > max_iter then
                     Info(InfoMajoranaLinearEq, 5,
                          "reached iteration limit, trying to compute denominator");
-                    coeffs := TransposedMat(coeffs);
+        #             coeffs := TransposedMat(coeffs);
 
                     # TODO: do we have to do them all?
                     # FIXME:
                     denom := 1;
                     for k in [1..Length(pre.uniqvars)] do
-                        denom := LcmInt(denom, PadicDenominator(coeffs[pre.uniqvars[k]], p, iterations));
+#                        denom := LcmInt(denom, PadicDenominatorPadic(coeffs[pre.uniqvars[k]], p, iterations));
+                        denom := LcmInt(denom, PadicDenominatorPadic(denom * coeffs_padic[pre.uniqvars[k]]));
                     od;
 
                     Info(InfoMajoranaLinearEq, 5,
