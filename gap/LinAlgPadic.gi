@@ -208,111 +208,6 @@ PadicDenominatorPadic := function(number)
     od;
 end;
 
-PadicDenominator := function(number, p, precision)
-    local big
-        , little
-        , bigf
-        , littlef
-        , tmp, i
-        , sig
-        , ecnt
-        , oldequot
-        , tmpl
-        , retv
-        , n
-        , biggest
-        , PadicList, PadicLess, PadicAdd, PadicAssert;
-    PadicAssert := function(number)
-        if ForAny(number{[1..precision-1]}, x -> (x < 0) or (x >= p)) then
-            Error("invalid p-adic rep");
-        fi;
-    end;
-
-    PadicAssert(number);
-    PadicLess := function(a,b)
-        local i;
-
-        PadicAssert(a);
-        PadicAssert(b);
-
-        # Should be precision
-        for i in [precision-1, precision-2..1] do
-            if a[i] < b[i] then
-                return true;
-            elif a[i] > b[i] then
-                return false;
-            fi;
-        od;
-        return true;
-    end;
-    PadicAdd := function(a,b)
-        local r, i;
-
-        PadicAssert(a);
-        PadicAssert(b);
-
-        r := ShallowCopy(a + b);
-
-        # Process carry
-        for i in [1..Length(r) - 1] do
-            while r[i] >= p do
-                r[i+1] := r[i+1] + 1;
-                r[i] := r[i] - p;
-            od;
-        od;
-        r[Length(r)] := 0;
-        
-        return r;
-    end;
-
-    if Length(PositionsProperty(number, x -> (x=0) or x = (p-1)))/Length(number) > 3/4 then
-        return 1;
-    fi;
-
-    biggest := 0.0;
-
-    little := number;
-    littlef := 1;
-    big := number;
-    bigf := 1;
-
-    n := 0;
-    while true do
-        n := n + 1;
-
-        tmp := PadicAdd(little, big);
-
-        biggest := Maximum(biggest, Maximum( Float(Length(PositionsProperty(tmp, x -> (x=(p-1))))/Length(tmp)),
-                                         Float(Length(PositionsProperty(tmp, x -> (x=0)))/Length(tmp) ) ) );
-        Info(InfoMajoranaPadics, 10,
-             STRINGIFY(Float(Length(PositionsProperty(tmp, x -> (x=0)))/Length(tmp)), " ",
-                       Float(Length(PositionsProperty(tmp, x -> (x=(p-1))))/Length(tmp)), "\n"));
-
-        # TODO better check that this is *Exact*
-        #      by looking at the p-adic norm and deciding whether number has converged
-        if Length(PositionsProperty(tmp, x -> (x=0) or x = (p-1)))/Length(tmp) > 7/10 then
-            if bigf + littlef = 2 then
-                # Error("gcd is 2");
-            fi;
-            return bigf + littlef;
-        fi;
-
-        if PadicLess(tmp, little) then
-            little := tmp;
-            littlef := bigf + littlef;
-        elif PadicLess(big, tmp) then
-            big := tmp;
-            bigf := bigf + littlef;
-        else
-            Info(InfoMajoranaLinearEq, 1, "little <= tmp <= big: "
-                 , little, " "
-                 , tmp, " "
-                 , big);
-            Error("This shouldn't happen");
-        fi;
-    od;
-end;
-
 # This is slightly prettier than before, and still reasonably fast
 _Fold := function(init, func, iterable)
     local result, i;
@@ -328,14 +223,6 @@ _FoldMat := function(init, func, matrix)
                 , {v, row} -> _Fold(init, {v, entry} -> func(v, entry), row)
                 , matrix);
 end;
-# FIXME: This does not work correctly...
-# function(mat, vecs)
-#    local matlcm, row, e, lcm;
-#
-#    return LcmInt( _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), mat)
-#                 , _FoldMat(1, {v, e} -> LcmInt(v, DenominatorRat(e)), vecs));
-#end;
-
 
 FindLCM := function(mat, vecs)
     local r, res;
