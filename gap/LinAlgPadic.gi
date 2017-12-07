@@ -161,6 +161,8 @@ PadicDenominator := function(number)
     # This should probably not be computed every time
     thresh := FamilyObj(number)!.prime ^ QuoInt(prec, 10);
 
+    Info(InfoMajoranaPadics, 10, " n: ", number, "\n");
+
     # We regard this number as integer
     if (number![2] < thresh) or
        ((PadicNumber(FamilyObj(number), -1) * number)![2] < thresh) then
@@ -440,13 +442,13 @@ function(pre, mat, b, p, max_iter)
     local
           # These are *integer* vectors
           soln, soln_sym,
-          residue, residue_sym,
+          residue_sym,
 
           # These are vectors in GF(p)
-          vec_p, vec_p_sym,
-          soln_p, soln_p_sym,
+          vec_p_sym,
+          soln_p_sym,
 
-          done, iterations, coeffs, coeffs_sym, coeffs_padic, fam,
+          done, iterations, coeffs_padic, fam,
           ppower, sol, x, y, i,
           k, denom, vecd;
 
@@ -512,10 +514,11 @@ function(pre, mat, b, p, max_iter)
                          "reached iteration limit, trying to compute denominator");
 
                     # TODO: do we have to do them all?
-                    # FIXME:
+                    #       (we don't but we risk having to to more iterations)
                     denom := 1;
                     for k in [1..Length(pre.uniqvars)] do
                         denom := LcmInt(denom, PadicDenominator(denom * coeffs_padic[pre.uniqvars[k]]));
+                        Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
                     od;
 
                     Info(InfoMajoranaLinearEq, 5,
