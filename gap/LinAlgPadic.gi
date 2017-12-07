@@ -152,7 +152,7 @@ PadicLess := function(a, b, precision)
     return true;
 end;
 
-PadicDenominatorPadic := function(number)
+PadicDenominator := function(number)
     local n, thresh, tmp, big, little, bigf, littlef, biggest, prec;
 
     prec := FamilyObj(number)!.precision;
@@ -206,22 +206,6 @@ PadicDenominatorPadic := function(number)
             Error("This shouldn't happen");
         fi;
     od;
-end;
-
-# This is slightly prettier than before, and still reasonably fast
-_Fold := function(init, func, iterable)
-    local result, i;
-    result := init;
-    for i in iterable do
-        result := func(result, i);
-    od;
-    return result;
-end;
-
-_FoldMat := function(init, func, matrix)
-    return _Fold( init
-                , {v, row} -> _Fold(init, {v, entry} -> func(v, entry), row)
-                , matrix);
 end;
 
 FindLCM := function(mat, vecs)
@@ -451,17 +435,6 @@ end;
 #
 # TODO:  Can we use the fact we found integer solutions for some variables
 #
-CoeffTest := function(p, a,b)
-    local i;
-
-    for i in [1..Length(b)] do
-        if a[i] = b[i] or a[i] = b[i] + p then
-        else
-            Error("check");
-        fi;
-    od;
-end;
-
 InstallGlobalFunction(MAJORANA_SolutionIntMatVec_Padic,
 function(pre, mat, b, p, max_iter)
     local
