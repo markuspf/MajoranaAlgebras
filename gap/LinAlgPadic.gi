@@ -142,7 +142,7 @@ PadicLess := function(a, b, precision)
     local i;
 
     # Should be precision
-    for i in [precision-1, precision-2..1] do
+    for i in [precision, precision-1..1] do
         if a[i] < b[i] then
             return true;
         elif a[i] > b[i] then
@@ -159,7 +159,7 @@ PadicDenominator := function(number)
 
     # Threshold where we consider something an integer
     # This should probably not be computed every time
-    thresh := FamilyObj(number)!.prime ^ QuoInt(prec, 10);
+    thresh := FamilyObj(number)!.prime ^ QuoInt(prec, 2);
 
     Info(InfoMajoranaPadics, 10, " n: ", number, "\n");
 
@@ -450,7 +450,7 @@ function(pre, mat, b, p, max_iter)
 
           done, iterations, coeffs_padic, fam,
           ppower, sol, x, y, i,
-          k, denom, vecd;
+          k, old_denom, denom, vecd;
 
     # Accumulator for integer solution
     soln_sym := ListWithIdenticalEntries(Length(mat), 0);
@@ -515,11 +515,20 @@ function(pre, mat, b, p, max_iter)
 
                     # TODO: do we have to do them all?
                     #       (we don't but we risk having to to more iterations)
+                    old_denom := 1;
                     denom := 1;
-                    for k in [1..Length(pre.uniqvars)] do
+                    k := 1;
+                    repeat
+                        old_denom := denom;
                         denom := LcmInt(denom, PadicDenominator(denom * coeffs_padic[pre.uniqvars[k]]));
+                        k := k + 1;
                         Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
-                    od;
+                    until ((denom > 1) and (old_denom = denom)) or k > Length(pre.uniqvars);
+
+                    # for k in [1..Minimum(10, Length(pre.uniqvars))] do
+                    #    denom := LcmInt(denom, PadicDenominator(denom * coeffs_padic[pre.uniqvars[k]]));
+                    #    Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
+                    #od;
 
                     Info(InfoMajoranaLinearEq, 5,
                          "found denominator: ", denom);
@@ -613,6 +622,8 @@ function(mat, vecs)
     tmat := TransposedMat(mat);
     tvecs := TransposedMat(vecs);
 
+    Info(InfoMajoranaLinearEq, 1, " zero rows: ", Length(PositionsProperty(tmat, IsZero)));
+
     intsys := MakeIntSystem(tmat, tvecs);
 
     pre := Presolve(intsys[1], p);
@@ -629,8 +640,7 @@ function(mat, vecs)
     denom := 1;
     sl := [,1];
     for v in intsys[2] do
-        denom := LcmInt(denom, sl[2]);
-        Print("using denominator: ", denom, "\n");
+        denom := denom * sl[2];
         sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, p, max_iter);
         Add(tsols, sl[1] / denom);
     od;
