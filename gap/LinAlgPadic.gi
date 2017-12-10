@@ -210,19 +210,6 @@ PadicDenominator := function(number)
     od;
 end;
 
-FindLCM := function(mat, vecs)
-    local r, res;
-
-    res := [];
-    for r in mat do
-        Add(res, _FoldList2(r, DenominatorRat, LcmInt));
-    od;
-    for r in vecs do
-        Add(res, _FoldList2(r, DenominatorRat, LcmInt));
-    od;
-    return _FoldList2(res, IdFunc, LcmInt);
-end;
-
 # Just to make sure we're not shooting ourselves
 # in the foot with inconsistent entries.
 TestIntSystem := function(intsys)
@@ -248,15 +235,40 @@ TestIntSystem := function(intsys)
           " success.");
 end;
 
-# FIXME: We don't bother with the LCM for the time being
+# This computes the lcm of each row of mat and each row of vecs
+# and stores them in a list. It then chooses a prime that does not
+# occur in any denominator. We will try to solve the system modulo
+# that prime and lift solutions
 MakeIntSystem := function(mat, vecs)
-    local mult, intsys;
+    local mult, intsys, mmults, vmults, p, gcd;
 
-    mult := FindLCM(mat, vecs);
     Info(InfoMajoranaLinearEq, 5,
-         "using lcm ", mult, " as multiplier");
+         "computing row-wise denominator lcms" );
 
-    intsys := [mult * mat, mult * vecs ];
+    mmults := List(mat, x -> _FoldList2(x, DenominatorRat, LcmInt));
+    vmults := List(vecs, x -> _FoldList2(x, DenominatorRat, LcmInt));
+
+    intsys := [ List([1..Length(mat)], i -> mmults[i] * mat[i])
+              , List([1..Length(vecs)], i -> vmults[i] * vecs[i])
+              , mmults
+              , vmults
+              # FIXME: Only for experiments, we do not actually need the factorisation
+              # , DuplicateFreeList(Concatenation(List(mmults, Factors)))
+              # , DuplicateFreeList(Concatenation(List(vmults, Factors)))
+              ];
+    Info(InfoMajoranaLinearEq, 5,
+         "choosing a prime that does not occur in any denominator");
+
+    gcd := Lcm(Concatenation(mmults, vmults));
+    p := 1;
+    repeat
+        p := NextPrimeInt(p);
+        Info(InfoMajoranaLinearEq, 5,
+             "prime: ", p);
+    until GcdInt(gcd, p) = 1;
+
+    intsys[7] := p;
+
     if MAJORANA_LinAlg_Padic_Debug then
         TestIntSystem(intsys);
     fi;
@@ -342,6 +354,7 @@ function(imat, p)
     Info(InfoMajoranaLinearEq, 5,
          "reducing mod ", p);
     pmat := Z(p)^0 * imat;
+    ConvertToMatrixRep(pmat);
 
     Info(InfoMajoranaLinearEq, 5,
          "finding semiechelon form");
@@ -583,14 +596,15 @@ InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
 
 # Solve for multiple right-hand-sides
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
-function(mat, vecs, p, max_iter)
-    local intsys, pre, v, sol, denom, sols;
+function(mat, vecs, max_iter)
+    local intsys, pre, v, sol, denom, sols, p;
 
     if not IsPrime(p) then
         Error("p has to be a prime");
     fi;
 
     intsys := MakeIntSystem(mat, vecs);
+    p := intsys[7];
 
     pre := Presolve(intsys[1], p);
 
@@ -608,9 +622,8 @@ end;
 
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin,
 function(mat, vecs)
-    local res, tmat, tvecs, tsols, intsys, pre, p, max_iter, i, v, sl, denom, unsol;
+    local res, tmat, tvecs, tsols, intsys, pre, max_iter, i, v, sl, denom, unsol;
 
-    p := MAJORANA_LinAlg_Padic_Prime;
     max_iter := MAJORANA_LinAlg_Padic_Iterations;
 
     Info(InfoMajoranaLinearEq, 1, "Using p-adic expansion code...");
@@ -626,7 +639,7 @@ function(mat, vecs)
 
     intsys := MakeIntSystem(tmat, tvecs);
 
-    pre := Presolve(intsys[1], p);
+    pre := Presolve(intsys[1], intsys[7]);
     if pre.solvvars = [] then
         res.solutions := ListWithIdenticalEntries(Length(tmat), fail);
         res.mat := [];
@@ -641,7 +654,7 @@ function(mat, vecs)
     sl := [,1];
     for v in intsys[2] do
         denom := denom * sl[2];
-        sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, p, max_iter);
+        sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, intsys[7], max_iter);
         Add(tsols, sl[1] / denom);
     od;
 
