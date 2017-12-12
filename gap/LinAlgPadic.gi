@@ -1,4 +1,5 @@
-
+# FIXME: This function does a divide-and-conquer map/reduce
+#        over a list. This should go in the GAP library
 _FoldList2 := function(list, func, op)
     local k, s, old_s, r, i, len, n, nh, res, r1, r2;
 
@@ -42,61 +43,6 @@ _FoldList2 := function(list, func, op)
     return res[ k * s ];
 end;
 
-
-# FIXME: Prototype sparse matrices using hash tables
-
-#InstallGlobalFunction(NewSparseMatrix,
-#function(ring, rowc, colc)
-#    return Objectify(SparseMatrixType, [ring, rowc, colc, false, HashMap()]);
-#end);
-#
-#InstallOtherMethod( \[\], "for a sparse matrix, an index, and an index"
-#               , [ IsSparseMatrixRep, IsPosInt, IsPosInt ],
-#function(m, i, j)
-#    local idx;
-#    if m![4] then
-#        idx := [i, j];
-#    else
-#        idx := [j, i];
-#    fi;
-#    if idx in m![5] then
-#        return m![5][idx];
-#    else
-#        return Zero(m![1]);
-#    fi;
-#end);
-#
-#InstallOtherMethod( \[\]\:\=, "for a sparse matrix, an index, and an index"
-#                    , [ IsSparseMatrixRep, IsPosInt, IsPosInt, IsObject ],
-#function(m, i, j, val)
-#    local idx;
-#    if m![4] then
-#        idx := [i, j];
-#    else
-#        idx := [j, i];
-#    fi;
-#    m![5][idx] := val;
-#end);
-#
-#InstallGlobalFunction( LcmOfDenominators,
-#function(mat)
-#    return _FoldList2(mat![5]![6], DenominatorRat, LcmInt);
-#end);
-#
-#InstallMethod( ViewString, "", [IsSparseMatrixRep],
-#function(mat)
-#    return STRINGIFY( "<a sparse hashtable "
-#                    , mat![2], "x", mat![3]
-#                    , " matrix over "
-#                    , ViewString(mat![1]), ">");
-#end);
-#
-#InstallMethod( ViewObj, "", [IsSparseMatrixRep],
-#function(mat)
-#    Print(ViewString(mat));
-#end);
-#
-
 # Solving linear equations over the integers/rationals by Dixon/Hensel lifting
 #
 # This is a GAP prototype which already works quite a bit faster than any code
@@ -115,6 +61,8 @@ end;
 # * Parallelisation strategies
 # * use meataxe64
 #
+
+# FIXME: This way of comparing p-adic numbers is stupid
 PadicList := function(padic)
     local result, n, p, r, i;
 
@@ -152,6 +100,9 @@ PadicLess := function(a, b, precision)
     return true;
 end;
 
+# FIXME: try to detect insufficient progress and abort
+#        or provide a maximum number of iterations, and return "fail"
+#        if it is reached.
 PadicDenominator := function(number)
     local n, thresh, tmp, big, little, bigf, littlef, biggest, prec;
 
@@ -251,15 +202,11 @@ MakeIntSystem := function(mat, vecs)
     intsys := [ List([1..Length(mat)], i -> mmults[i] * mat[i])
               , List([1..Length(vecs)], i -> vmults[i] * vecs[i])
               , mmults
-              , vmults
-              # FIXME: Only for experiments, we do not actually need the factorisation
-              # , DuplicateFreeList(Concatenation(List(mmults, Factors)))
-              # , DuplicateFreeList(Concatenation(List(vmults, Factors)))
-              ];
+              , vmults ];
     Info(InfoMajoranaLinearEq, 5,
          "choosing a prime that does not occur in any denominator");
 
-    gcd := Lcm(Concatenation(mmults, vmults));
+    gcd := _FoldList2(Concatenation(mmults, vmults), IdFunc, LcmInt);
     p := 1;
     repeat
         p := NextPrimeInt(p);
@@ -573,23 +520,6 @@ function(pre, mat, b, p, max_iter)
     od;
 end);
 
-InstallGlobalFunction( MAJORANA_NullspaceIntMat_Padic,
-function(mat, p)
-    local pre;
-
-    pre := Presolve(mat, p);
-
-end);
-
-InstallGlobalFunction( MAJORANA_NullspaceMat_Padic,
-function(mat, p)
-    local intsys;
-
-    intsys := MakeIntSystem(mat, [[]]);
-
-    return MAJORANA_NullspaceIntMat_Padic(intsys[1], p);
-end);
-
 # Solve for one right-hand-side
 InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
                        { mat, b, p, max_iter } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], p, max_iter) );
@@ -611,15 +541,7 @@ function(mat, vecs, max_iter)
     return List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
 end);
 
-
-
-ExtractRelations :=
-function(mat, pre)
-    return [[],[]];
-end;
-
 ## Plug
-
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin,
 function(mat, vecs)
     local res, tmat, tvecs, tsols, intsys, pre, max_iter, i, v, sl, denom, unsol;
@@ -664,7 +586,8 @@ function(mat, vecs)
         res.solutions[i] := fail;
     od;
 
-    # FIXME: Extract relations
+    # FIXME: It would be more efficient (in particular for large matrices)
+    #        to just return the selector (As RP calls it)
     unsol := Difference([1..Length(mat)], pre.zeroablerhs);
     res.mat := mat{ unsol };
     res.vec := vecs{ unsol };
