@@ -103,7 +103,7 @@ end;
 # FIXME: try to detect insufficient progress and abort
 #        or provide a maximum number of iterations, and return "fail"
 #        if it is reached.
-PadicDenominator := function(number)
+PadicDenominator := function(number, max_iter)
     local n, thresh, tmp, big, little, bigf, littlef, biggest, prec;
 
     prec := FamilyObj(number)!.precision;
@@ -126,7 +126,7 @@ PadicDenominator := function(number)
     bigf := 1;
 
     n := 0;
-    while true do
+    while n < max_iter do
         n := n + 1;
 
         tmp := little + big;
@@ -159,7 +159,44 @@ PadicDenominator := function(number)
             Error("This shouldn't happen");
         fi;
     od;
+
+    Info(InfoMajoranaPadics, 1
+         , " failed to compute denominator after ", n, " iterations, giving up");
+    return fail;
 end;
+
+# Compute LCM of denominators of a list of p-adics
+# TODO: do we have to do them all?
+PadicDenominatorList := function(list, max_iter)
+    local denom, old_denom, k, iter;
+
+    # FIXME: Attempt at cleanup: First just compute all denominators.
+
+    
+    old_denom := 1;
+    denom := 1;
+    k := 1;
+
+    repeat
+        old_denom := denom;
+        iter := max_iter;
+        repeat
+            denom := PadicDenominator(old_denom * list, iter);
+            iter := iter * 2;
+            Print("err: ", iter, "\n");
+        until denom <> fail or iter > 512 * max_iter;
+
+        if denom <> fail then
+            denom := LcmInt(denom, old_denom);
+        fi;
+
+        k := k + 1;
+        Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
+    until ((denom > 1) and (old_denom = denom)) or k > Length(list);
+
+    return denom;
+end;
+
 
 # Just to make sure we're not shooting ourselves
 # in the foot with inconsistent entries.
@@ -191,7 +228,7 @@ end;
 # occur in any denominator. We will try to solve the system modulo
 # that prime and lift solutions
 MakeIntSystem := function(mat, vecs)
-    local mult, intsys, mmults, vmults, p, gcd;
+    local mult, intsys, mmults, vmults, p, lcm;
 
     Info(InfoMajoranaLinearEq, 5,
          "computing row-wise denominator lcms" );
@@ -199,22 +236,24 @@ MakeIntSystem := function(mat, vecs)
     mmults := List(mat, x -> _FoldList2(x, DenominatorRat, LcmInt));
     vmults := List(vecs, x -> _FoldList2(x, DenominatorRat, LcmInt));
 
-    intsys := [ List([1..Length(mat)], i -> mmults[i] * mat[i])
-              , List([1..Length(vecs)], i -> vmults[i] * vecs[i])
-              , mmults
-              , vmults ];
     Info(InfoMajoranaLinearEq, 5,
          "choosing a prime that does not occur in any denominator");
 
-    gcd := _FoldList2(Concatenation(mmults, vmults), IdFunc, LcmInt);
+    lcm := _FoldList2(Concatenation(mmults, vmults), IdFunc, LcmInt);
     p := 1;
     repeat
         p := NextPrimeInt(p);
         Info(InfoMajoranaLinearEq, 5,
              "prime: ", p);
-    until GcdInt(gcd, p) = 1;
+    until GcdInt(lcm, p) = 1;
 
-    intsys[7] := p;
+    intsys := [ lcm * mat
+              , lcm * vecs
+              , mmults
+              , vmults
+              ,
+              ,
+              , p ];
 
     if MAJORANA_LinAlg_Padic_Debug then
         TestIntSystem(intsys);
@@ -410,7 +449,7 @@ function(pre, mat, b, p, max_iter)
 
           done, iterations, coeffs_padic, fam,
           ppower, sol, x, y, i,
-          k, old_denom, denom, vecd;
+          k, old_denom, denom, vecd, iter;
 
     # Accumulator for integer solution
     soln_sym := ListWithIdenticalEntries(Length(mat), 0);
@@ -472,26 +511,11 @@ function(pre, mat, b, p, max_iter)
                 if iterations > max_iter then
                     Info(InfoMajoranaLinearEq, 5,
                          "reached iteration limit, trying to compute denominator");
-
-                    # TODO: do we have to do them all?
-                    #       (we don't but we risk having to to more iterations)
-                    old_denom := 1;
-                    denom := 1;
-                    k := 1;
-                    repeat
-                        old_denom := denom;
-                        denom := LcmInt(denom, PadicDenominator(denom * coeffs_padic[pre.uniqvars[k]]));
-                        k := k + 1;
-                        Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
-                    until ((denom > 1) and (old_denom = denom)) or k > Length(pre.uniqvars);
-
-                    # for k in [1..Minimum(10, Length(pre.uniqvars))] do
-                    #    denom := LcmInt(denom, PadicDenominator(denom * coeffs_padic[pre.uniqvars[k]]));
-                    #    Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
-                    #od;
-
+                    # Compute the least common denominator of them all
+                    denom := PadicDenominatorList( coeffs_padic{ [pre.uniqvars] } );
                     Info(InfoMajoranaLinearEq, 5,
                          "found denominator: ", denom);
+
                     if denom = 1 then
                         Info(InfoMajoranaLinearEq, 5,
                              "denominator 1 should not happen, trying to solve using GAP's builtin method");
@@ -509,7 +533,6 @@ function(pre, mat, b, p, max_iter)
 
                 # The residue better be divisible by p now.
                 residue_sym{ pre.zeroablerhs } := residue_sym{ pre.zeroablerhs } / p;
-
                 ppower := ppower * p;
             fi;
         else
