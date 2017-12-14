@@ -62,61 +62,49 @@ end;
 # * use meataxe64
 #
 
-# FIXME: This way of comparing p-adic numbers is stupid
-PadicList := function(padic)
-    local result, n, p, r, i;
+# FIXME:
+PadicLess := function(a,b)
+    local fam, p, q_a, q_b, r_a, r_b, div;
 
-    result := [];
-    n := padic![2];
-    p := FamilyObj(padic)!.prime;
+    fam := FamilyObj(a);
+    p := fam!.prime;
 
-    for i in [1..padic![1]] do
-        Add(result, 0);
-    od;
+    r_a := p^(a![1]) * a![2];
+    r_b := p^(b![1]) * b![2];
+    div := p ^ (fam!.precision - 1);
 
-    while n <> 0 do
-        r := n mod p;
-        Add(result, r);
-        n := (n - r) / p;
-    od;
-
-    for i in [Length(result)+1..FamilyObj(padic)!.precision] do
-        Add(result, 0);
-    od;
-    return result{[1..FamilyObj(padic)!.precision]};
-end;
-
-PadicLess := function(a, b, precision)
-    local i;
-
-    # Should be precision
-    for i in [precision, precision-1..1] do
-        if a[i] < b[i] then
+    repeat
+        q_a := QuoInt(r_a, div);
+        q_b := QuoInt(r_b, div);
+        if r_a < r_b then
             return true;
-        elif a[i] > b[i] then
+        elif r_a > r_b then
             return false;
         fi;
-    od;
-    return true;
+        r_a := QuoInt(r_a, div);
+        r_b := QuoInt(r_b, div);
+        div := div / p;
+    until div = 1;
+    return false;
 end;
+
 
 # FIXME: try to detect insufficient progress and abort
 #        or provide a maximum number of iterations, and return "fail"
 #        if it is reached.
 PadicDenominator := function(number, max_iter)
-    local n, thresh, tmp, big, little, bigf, littlef, biggest, prec;
-
-    prec := FamilyObj(number)!.precision;
+    local n, thresh, tmp, big, little, bigf, littlef, biggest, fam;
 
     # Threshold where we consider something an integer
     # This should probably not be computed every time
-    thresh := FamilyObj(number)!.prime ^ QuoInt(prec, 2);
+    fam := FamilyObj(number);
+    thresh := fam!.prime ^ QuoInt(fam!.precision, 2);
 
     Info(InfoMajoranaPadics, 10, " n: ", number, "\n");
 
     # We regard this number as integer
     if (number![2] < thresh) or
-       ((PadicNumber(FamilyObj(number), -1) * number)![2] < thresh) then
+       (-number)![2] < thresh then
         return 1;
     fi;
 
@@ -132,23 +120,24 @@ PadicDenominator := function(number, max_iter)
         tmp := little + big;
         Info(InfoMajoranaPadics, 10
              , " lf: ", String(littlef, 16)
-             , " bf: ", String(bigf, 16), "\n");
+             , " bf: ", String(bigf, 16));
+        Info(InfoMajoranaPadics, 10
+             , " little: ", little
+             , " big:    ", big);
 
         # TODO: stop condition
         # this means that coefficients a_k for p^k are
         # 0 for all k > thresh
         if (tmp![2] < thresh) or
            ((PadicNumber(FamilyObj(tmp), -1) * tmp)![2] < thresh) then
-            if bigf + littlef = 2 then
-                # Error("gcd is 2");
-            fi;
+            Info(InfoMajoranaPadics, 1, "Iterations: ", n);
             return bigf + littlef;
         fi;
 
-        if PadicLess(PadicList(tmp), PadicList(little), prec) then
+        if PadicLess(tmp, little) then
             little := tmp;
             littlef := bigf + littlef;
-        elif PadicLess(PadicList(big), PadicList(tmp), prec) then
+        elif PadicLess(big, tmp) then
             big := tmp;
             bigf := bigf + littlef;
         else
@@ -170,31 +159,22 @@ end;
 PadicDenominatorList := function(list, max_iter)
     local denom, old_denom, k, iter;
 
-    # FIXME: Attempt at cleanup: First just compute all denominators.
-
-    
     old_denom := 1;
     denom := 1;
     k := 1;
 
     repeat
-        old_denom := denom;
-        iter := max_iter;
-        repeat
-            denom := PadicDenominator(old_denom * list, iter);
-            iter := iter * 2;
-            Print("err: ", iter, "\n");
-        until denom <> fail or iter > 512 * max_iter;
+        denom := PadicDenominator(old_denom * list[k], max_iter);
 
         if denom <> fail then
-            denom := LcmInt(denom, old_denom);
+            old_denom := LcmInt(old_denom, denom);
         fi;
 
         k := k + 1;
         Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
-    until ((denom > 1) and (old_denom = denom)) or k > Length(list);
+    until ((old_denom > 1) and (old_denom = denom)) or k > Length(list);
 
-    return denom;
+    return old_denom;
 end;
 
 
@@ -512,7 +492,7 @@ function(pre, mat, b, p, max_iter)
                     Info(InfoMajoranaLinearEq, 5,
                          "reached iteration limit, trying to compute denominator");
                     # Compute the least common denominator of them all
-                    denom := PadicDenominatorList( coeffs_padic{ [pre.uniqvars] } );
+                    denom := PadicDenominatorList( coeffs_padic{ pre.uniqvars }, max_iter );
                     Info(InfoMajoranaLinearEq, 5,
                          "found denominator: ", denom);
 
@@ -545,16 +525,12 @@ end);
 
 # Solve for one right-hand-side
 InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
-                       { mat, b, p, max_iter } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], p, max_iter) );
+                       { mat, b, max_iter } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], max_iter) );
 
 # Solve for multiple right-hand-sides
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
 function(mat, vecs, max_iter)
     local intsys, pre, v, sol, denom, sols, p;
-
-    if not IsPrime(p) then
-        Error("p has to be a prime");
-    fi;
 
     intsys := MakeIntSystem(mat, vecs);
     p := intsys[7];
