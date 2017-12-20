@@ -1,17 +1,43 @@
+
+ConvertSparse := function(smat, p)
+    local m, r, i, j, m2, maxrow, maxcol;
+
+    maxrow := Maximum(List(smat![5]![5], x -> x[1]));
+    maxcol := Maximum(List(smat![5]![5], x -> x[2]));
+    Print("nonzero: ", maxrow, ", ", maxcol, "\n");
+
+    Print("creating non-sparse primefield mat\n");
+    r := ListWithIdenticalEntries(maxcol, Zero(GF(p)));
+    ConvertToVectorRep(r);
+    m := [];
+    for i in [1..maxrow] do
+        m[i] := ShallowCopy(r);
+    od;
+
+    Print("copy & convert to prime field mat\n");
+    for i in mat![5]![5] do
+        m[i[1],i[2]] := mat![5][i] * One(GF(p));
+    od;
+
+    return m;
+end;
+
+
+
 # FIXME: This function does a divide-and-conquer map/reduce
 #        over a list. This should go in the GAP library
 _FoldList2 := function(list, func, op)
     local k, s, old_s, r, i, len, n, nh, res, r1, r2;
 
-
     len := Length(list);
     if len = 0 then
         return 1;
     elif len = 1 then
-        return list[1];
+        return func(list[1]);
     fi;
 
     res := List(list, func);
+
     k := len;
     s := 1;
     while k > 1 do
@@ -89,11 +115,10 @@ PadicLess := function(a,b)
 end;
 
 
-# FIXME: try to detect insufficient progress and abort
-#        or provide a maximum number of iterations, and return "fail"
-#        if it is reached.
+# FIXME: better way of detecting insufficient progress and abort?
 PadicDenominator := function(number, max_iter)
-    local n, thresh, tmp, big, little, bigf, littlef, biggest, fam;
+    local n, thresh, tmp, big, little, bigf, littlef, biggest, fam,
+          is_int;
 
     # Threshold where we consider something an integer
     # This should probably not be computed every time
@@ -102,9 +127,12 @@ PadicDenominator := function(number, max_iter)
 
     Info(InfoMajoranaPadics, 10, " n: ", number, "\n");
 
-    # We regard this number as integer
-    if (number![2] < thresh) or
-       (-number)![2] < thresh then
+    is_int := function(n)
+        return (n![2] < thresh) or
+               ((-n)![2] < thresh);
+    end;
+
+    if is_int(number) then
         return 1;
     fi;
 
@@ -125,12 +153,8 @@ PadicDenominator := function(number, max_iter)
              , " little: ", little
              , " big:    ", big);
 
-        # TODO: stop condition
-        # this means that coefficients a_k for p^k are
-        # 0 for all k > thresh
-        if (tmp![2] < thresh) or
-           ((PadicNumber(FamilyObj(tmp), -1) * tmp)![2] < thresh) then
-            Info(InfoMajoranaPadics, 1, "Iterations: ", n);
+        if is_int(tmp) then
+            Info(InfoMajoranaPadics, 1, "PadicDenominator iterations: ", n);
             return bigf + littlef;
         fi;
 
@@ -157,8 +181,9 @@ end;
 # Compute LCM of denominators of a list of p-adics
 # TODO: do we have to do them all?
 PadicDenominatorList := function(list, max_iter)
-    local denom, old_denom, k, iter;
+    local denom, old_denom, k, iter, found;
 
+    found := false;
     old_denom := 1;
     denom := 1;
     k := 1;
@@ -166,15 +191,22 @@ PadicDenominatorList := function(list, max_iter)
     repeat
         denom := PadicDenominator(old_denom * list[k], max_iter);
 
-        if denom <> fail then
+        if (denom <> fail) and (denom > 1) then
+            found := true;
             old_denom := LcmInt(old_denom, denom);
         fi;
 
         k := k + 1;
-        Info(InfoMajoranaLinearEq, 10, "current denominator: ", denom, "\n");
+        Info(InfoMajoranaLinearEq, 10, "current denominator: ", old_denom);
     until ((old_denom > 1) and (old_denom = denom)) or k > Length(list);
 
-    return old_denom;
+    if found then
+        Info(InfoMajoranaLinearEq, 10, "found denominator: ", old_denom);
+        return old_denom;
+    else
+        Info(InfoMajoranaLinearEq, 10, "failed to find");
+        return fail;
+    fi;
 end;
 
 
@@ -208,7 +240,7 @@ end;
 # occur in any denominator. We will try to solve the system modulo
 # that prime and lift solutions
 MakeIntSystem := function(mat, vecs)
-    local mult, intsys, mmults, vmults, p, lcm;
+    local mult, intsys, mmults, vmults, p, lcm, lcm2;
 
     Info(InfoMajoranaLinearEq, 5,
          "computing row-wise denominator lcms" );
@@ -220,6 +252,7 @@ MakeIntSystem := function(mat, vecs)
          "choosing a prime that does not occur in any denominator");
 
     lcm := _FoldList2(Concatenation(mmults, vmults), IdFunc, LcmInt);
+    intsys := [ lcm * mat, lcm * vecs ];
     p := 1;
     repeat
         p := NextPrimeInt(p);
@@ -227,13 +260,7 @@ MakeIntSystem := function(mat, vecs)
              "prime: ", p);
     until GcdInt(lcm, p) = 1;
 
-    intsys := [ lcm * mat
-              , lcm * vecs
-              , mmults
-              , vmults
-              ,
-              ,
-              , p ];
+    intsys[7] := p;
 
     if MAJORANA_LinAlg_Padic_Debug then
         TestIntSystem(intsys);
@@ -246,64 +273,67 @@ end;
 # FIXME: This is ugly and inefficient
 #        and possibly still not quite right
 SelectS := function(pre)
-    local i, j, n, vars, c, r, coeffs, nze;
+    local i, j, n, k
+          , vars
 
-    coeffs := pre.semiech.coeffs;
-    vars := [];
+          , l_to_r
+          , r_to_l
 
-    n := Length(coeffs[1]);
-    for c in coeffs do
-        i := n;
-        while IsZero(c[i]) and i >= 0 do i := i - 1; od;
-        if i > 0 then
-            AddSet(vars, i);
-        else
-            # This shouldn't happen
+          , rsel
+
+          , column_select   # The columns in b that we are able to solve with
+          , column_to_row   # column_to_row[i] is the row of vectors that has the pivot (leftmost entry = One(Field))
+          , row_to_column
+          , variable_to_row # which variable (column in x) is linked to row i
+          , row_select      # probably better named "variable select"
+          , variable_select #
+          , nz, v
+          , c, r, coeffs, nze, nheads
+          , rmask;
+
+
+    # These are the columns that we can zero in a RHS (i.e. columns that have pivots)
+    column_select := PositionsProperty(pre.semiech.heads, x -> not IsZero(x));
+
+    # column_to_row[column] is the row in vectors that has the pivot in column
+    column_to_row := pre.semiech.heads;
+    # row_to_column[row] is the column that this row in vectors has the pivot in
+    row_to_column := List(pre.semiech.vectors, v -> PositionProperty(v, x -> not (IsZero(x))));
+
+    # first column in coefficients that is not zero
+    # row_to_variable := List(pre.)ListWithIdenticalEntries(Length(pre.semiech.coeffs[1]), 0);
+
+    n := Length(pre.semiech.coeffs[1]);
+    variable_to_row := 0 * [1..n];
+    for c in column_select do
+        j := n;
+        while IsZero(pre.semiech.coeffs[column_to_row[c]][j]) and j >= 0 do j := j - 1; od;
+        if j > 0 then
+            variable_to_row[j] := column_to_row[c];
         fi;
     od;
-    pre.uniqvars := ShallowCopy(vars);
+    variable_select := PositionsProperty(variable_to_row, x -> not IsZero(x));
 
     for r in pre.semiech.relations do
-        nze := PositionsProperty(r, x -> not IsZero(x));
-        for i in vars do
-            if i in nze then
-                SubtractSet(vars, nze);
+        for v in variable_select do
+            # A relation involves a variable
+            if not IsZero(r[v]) then
+                nz := PositionsProperty(r, x -> not IsZero(x));
+                Error("relation");
             fi;
         od;
     od;
-    pre.solvvars := ShallowCopy(vars);
+
+    Error("select");
 end;
 
-
-ConvertSparse := function(smat, p)
-   local m, r, i, j, m2, maxrow, maxcol;
-
-   maxrow := Maximum(List(smat![5]![5], x -> x[1]));
-   maxcol := Maximum(List(smat![5]![5], x -> x[2]));
-   Print("nonzero: ", maxrow, ", ", maxcol, "\n");
-
-   Print("creating non-sparse primefield mat\n");
-   r := ListWithIdenticalEntries(maxcol, Zero(GF(p)));
-   ConvertToVectorRep(r);
-   m := [];
-   for i in [1..maxrow] do
-      m[i] := ShallowCopy(r);
-   od;
-
-   Print("copy & convert to prime field mat\n");
-   for i in mat![5]![5] do
-       m[i[1],i[2]] := mat![5][i] * One(GF(p));
-   od;
-
-   return m;
-end;
 
 # This puts the integer matrix imat into
 # semiechelon form modulo the integer p
 # TODO: This step could be done using meataxe64
 Presolve :=
 function(imat, p)
-    local n, pmat, semiech, uniqvars, zeroablerhs, res;
+    local n, pmat, semiech, res;
 
     res := rec();
 
@@ -327,14 +357,8 @@ function(imat, p)
     res.semiech := SemiEchelonMatTransformation(pmat);
 
     SelectS(res);
-    res.zeroablerhs := PositionsProperty(res.semiech.heads, x -> not IsZero(x));
-
     Info(InfoMajoranaLinearEq, 5,
-         "number of solvable variables:   ", Length(res.uniqvars));
-    Info(InfoMajoranaLinearEq, 5,
-         "number of returnable variables: ", Length(res.solvvars));
-    Info(InfoMajoranaLinearEq, 5,
-         "number of zeroable rhs:         ", Length(res.zeroablerhs));
+         "number of solvable variables:   ", Length(res.rsel));
 
     return res;
 end;
@@ -359,7 +383,6 @@ function(semiech, vec, selection)
 
     # "speed up" zero test
     z := Zero(vec[1]);
-
     for i in [1..ncols] do
         vno := semiech.heads[i];
         if vno <> 0 then
@@ -370,8 +393,8 @@ function(semiech, vec, selection)
             fi;
         fi;
     od;
-    return rec( residue := residue
-              , solution := soln );
+   return rec( residue := residue
+             , solution := soln );
 end;
 
 
@@ -417,26 +440,26 @@ end;
 # TODO:  Can we use the fact we found integer solutions for some variables
 #
 InstallGlobalFunction(MAJORANA_SolutionIntMatVec_Padic,
-function(pre, mat, b, p, max_iter)
+function(pre, mat, b, p, iter_step)
     local
           # These are *integer* vectors
-          soln, soln_sym,
-          residue_sym,
+          tmp_soln, soln,
+          residue,
 
           # These are vectors in GF(p)
-          vec_p_sym,
-          soln_p_sym,
+          vec_p,
+          soln_p,
 
           done, iterations, coeffs_padic, fam,
           ppower, sol, x, y, i,
           k, old_denom, denom, vecd, iter;
 
     # Accumulator for integer solution
-    soln_sym := ListWithIdenticalEntries(Length(mat), 0);
+    soln := ListWithIdenticalEntries(Length(mat), 0);
 
     # These are the *integer* residuals of the RHS
     # initially this is the RHS we're solving for
-    residue_sym := MutableCopyMat(b);
+    residue := MutableCopyMat(b);
 
     done := false;
     iterations := 0;
@@ -444,10 +467,10 @@ function(pre, mat, b, p, max_iter)
 
     # digits in the p-adic expansion of the approximation to the solution
     # to xA = b
-    fam := PurePadicNumberFamily(p, max_iter);
+    fam := PurePadicNumberFamily(p, iter_step);
     coeffs_padic := List([1..Length(mat)], x -> PadicNumber(fam, 0));
 
-    vec_p_sym := residue_sym * Z(p)^0;
+    vec_p := residue * Z(p)^0;
 
     #T just solve for the selected ones?
     while true do
@@ -458,45 +481,59 @@ function(pre, mat, b, p, max_iter)
         fi;
 
         # solve the system mod p
-        vec_p_sym := Z(p)^0 * residue_sym;
+        vec_p := Z(p)^0 * residue;
 
         # Note that SelectedSolutionWithEchelonForm converts to vector rep
-        soln_p_sym := SelectedSolutionWithEchelonForm(pre.semiech, vec_p_sym, pre.uniqvars);
+        soln_p := SelectedSolutionWithEchelonForm(pre.semiech, vec_p, pre.csel);
 
-        if IsZero( soln_p_sym.residue{ pre.zeroablerhs } ) then
-
-            # Convert the solution from GF(p) to integers 0..p-1 and -p/2..p/2-1
-            y := List(soln_p_sym.solution, IntFFESymm);
+        if IsZero( soln_p.residue{ pre.csel } ) then
+            # Convert the solution from GF(p) to integers -p/2..p/2-1
+            y := List(soln_p.solution, IntFFESymm);
 
             # they are the coefficients of the p-adic expansion of the denominator
-            coeffs_padic := coeffs_padic + List(y, c -> PadicNumber(fam, c * ppower));
+            coeffs_padic := coeffs_padic + List(y, c -> PadicNumber(fam, [iterations, c mod fam!.modulus ] ) );
+             # c * ppower));
 
-            # FIXME: better way?
-            AddRowVector(soln_sym, y, ppower);
+            AddRowVector(soln, y, ppower);
 
             for i in [1..Length(mat)] do
-                AddRowVector(residue_sym, mat[i], -y[i]);
+                AddRowVector(residue, mat[i], -y[i]);
             od;
 
-            Info(InfoMajoranaLinearEq, 10, "soln_sym:    ", soln_sym);
-            Info(InfoMajoranaLinearEq, 10, "y:           ", y);
-            Info(InfoMajoranaLinearEq, 10, "residue_sym: ", residue_sym);
+            Info(InfoMajoranaLinearEq, 10, "soln:    ", soln);
+            Info(InfoMajoranaLinearEq, 10, "y:       ", y);
+            Info(InfoMajoranaLinearEq, 10, "residue: ", residue);
 
             # Solution found?
-            if IsZero(residue_sym{ pre.zeroablerhs } ) then
+            if IsZero(residue{ pre.csel } ) then
                 Info(InfoMajoranaLinearEq, 5,
                      "found an integer solution");
-                return [soln_sym, 1];
+                return [soln, 1];
             else
-                if iterations > max_iter then
+                if iterations > iter_step then
                     Info(InfoMajoranaLinearEq, 5,
                          "reached iteration limit, trying to compute denominator");
                     # Compute the least common denominator of them all
-                    denom := PadicDenominatorList( coeffs_padic{ pre.uniqvars }, max_iter );
+                    denom := PadicDenominatorList( coeffs_padic{ pre.rsel }, 50 * iter_step );
                     Info(InfoMajoranaLinearEq, 5,
                          "found denominator: ", denom);
+                    if denom = fail then
+                        Error("fail");
+                    fi;
 
-                    if denom = 1 then
+                    # FIXME: Hack
+                    if denom = fail then
+                        denom := PadicDenominatorList( coeffs_padic{ pre.rsel }, 10 * iter_step);
+                    fi;
+
+                    if denom = fail then
+                        Info( InfoMajoranaLinearEq, 10
+                              , "failed to find denominator trying with more p-adic places");
+
+                        # FIXME: We could just extend the places we have here
+                        tmp_soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b, p, 3 * iter_step);
+                        return tmp_soln;
+                    elif denom = 1 then
                         Info(InfoMajoranaLinearEq, 5,
                              "denominator 1 should not happen, trying to solve using GAP's builtin method");
                         return [SolutionIntMat(mat, b), 1];
@@ -506,18 +543,19 @@ function(pre, mat, b, p, max_iter)
                         Info(InfoMajoranaLinearEq, 5,
                              "solving system after multiplying b by denominator.");
 
-                        soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, max_iter);
-                        return [ soln[1] / denom, soln[2] * denom ];
+                        tmp_soln := MAJORANA_SolutionIntMatVec_Padic(pre, mat, b * denom, p, iter_step);
+                        return [ tmp_soln[1] / denom, tmp_soln[2] * denom ];
                     fi;
                 fi;
 
                 # The residue better be divisible by p now.
-                residue_sym{ pre.zeroablerhs } := residue_sym{ pre.zeroablerhs } / p;
+                residue{ pre.csel } := residue{ pre.csel } / p;
                 ppower := ppower * p;
             fi;
         else
             Info(InfoMajoranaLinearEq, 5,
                  "there does not exist a rational solution");
+            Error("err?");
             return fail;
         fi;
     od;
@@ -525,7 +563,7 @@ end);
 
 # Solve for one right-hand-side
 InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
-                       { mat, b, max_iter } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], max_iter) );
+                       { mat, b, iter_step } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], iter_step) );
 
 # Solve for multiple right-hand-sides
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
@@ -561,7 +599,8 @@ function(mat, vecs)
     intsys := MakeIntSystem(tmat, tvecs);
 
     pre := Presolve(intsys[1], intsys[7]);
-    if pre.solvvars = [] then
+
+    if pre.rsel = [] then
         res.solutions := ListWithIdenticalEntries(Length(tmat), fail);
         res.mat := [];
         res.vec := [];
@@ -574,22 +613,26 @@ function(mat, vecs)
     denom := 1;
     sl := [,1];
     for v in intsys[2] do
-        denom := denom * sl[2];
+        denom := LcmInt(denom,  sl[2]);
         sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, intsys[7], max_iter);
         Add(tsols, sl[1] / denom);
     od;
 
     res.solutions := TransposedMatMutable(tsols);
 
-    for i in Difference([1..Length(res.solutions)], pre.solvvars) do
+    for i in Difference([1..Length(res.solutions)], pre.rsel) do
         res.solutions[i] := fail;
     od;
 
     # FIXME: It would be more efficient (in particular for large matrices)
     #        to just return the selector (As RP calls it)
-    unsol := Difference([1..Length(mat)], pre.zeroablerhs);
+    unsol := Difference([1..Length(mat)], pre.rsel);
+    Print("unsolved (", Length(unsol), ") ", unsol, "\n");
+
     res.mat := mat{ unsol };
     res.vec := vecs{ unsol };
+#    res.mat := [[]];
+#    res.vec := [[]];
 
     return res;
 end);

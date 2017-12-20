@@ -202,10 +202,13 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs,
                 fi;
             fi;
         od;
+
+        Print("unsolved: (", Length(unsolved), "): ", unsolved, "\n");
         
         return rec( solutions := sol,
                     mat := new_mat,
-                    vec := new_vec  );
+                    vec := new_vec,
+                    unsolved := unsolved );
                     
         end );
     
