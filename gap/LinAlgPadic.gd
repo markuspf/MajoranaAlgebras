@@ -25,6 +25,7 @@ DeclareInfoClass("InfoMajoranaLinearEq");
 # This is the function that should be "pluggable" into the
 # rest of the Majorana algebras stuff
 DeclareGlobalFunction( "MAJORANA_SolutionMatVecs_Plugin" );
+DeclareGlobalFunction( "MAJORANA_SolutionMatVecs_Plugin2" );
 DeclareGlobalFunction( "MAJORANA_NullspaceMat_Plugin" );
 
 # This activates some sanity checks

@@ -198,7 +198,7 @@ PadicDenominatorList := function(list, max_iter)
 
         k := k + 1;
         Info(InfoMajoranaLinearEq, 10, "current denominator: ", old_denom);
-    until ((old_denom > 1) and (old_denom = denom)) or k > Length(list);
+    until k > Length(list);
 
     if found then
         Info(InfoMajoranaLinearEq, 10, "found denominator: ", old_denom);
@@ -252,6 +252,8 @@ MakeIntSystem := function(mat, vecs)
          "choosing a prime that does not occur in any denominator");
 
     lcm := _FoldList2(Concatenation(mmults, vmults), IdFunc, LcmInt);
+    Info(InfoMajoranaLinearEq, 5,
+         "lcm: ", lcm);
     intsys := [ lcm * mat, lcm * vecs ];
     p := 1;
     repeat
@@ -273,11 +275,8 @@ end;
 # FIXME: This is ugly and inefficient
 #        and possibly still not quite right
 SelectS := function(pre)
-    local i, j, n, k
+    local i, j, n, k, x, r2
           , vars
-
-          , l_to_r
-          , r_to_l
 
           , rsel
 
@@ -287,7 +286,7 @@ SelectS := function(pre)
           , variable_to_row # which variable (column in x) is linked to row i
           , row_select      # probably better named "variable select"
           , variable_select #
-          , nz, v
+          , nz, v, v2
           , c, r, coeffs, nze, nheads
           , rmask;
 
@@ -296,7 +295,7 @@ SelectS := function(pre)
     column_select := PositionsProperty(pre.semiech.heads, x -> not IsZero(x));
 
     # column_to_row[column] is the row in vectors that has the pivot in column
-    column_to_row := pre.semiech.heads;
+    column_to_row := ShallowCopy(pre.semiech.heads);
     # row_to_column[row] is the column that this row in vectors has the pivot in
     row_to_column := List(pre.semiech.vectors, v -> PositionProperty(v, x -> not (IsZero(x))));
 
@@ -312,19 +311,31 @@ SelectS := function(pre)
             variable_to_row[j] := column_to_row[c];
         fi;
     od;
-    variable_select := PositionsProperty(variable_to_row, x -> not IsZero(x));
 
+    variable_select := PositionsProperty(variable_to_row, x -> not IsZero(x));
     for r in pre.semiech.relations do
         for v in variable_select do
             # A relation involves a variable
             if not IsZero(r[v]) then
                 nz := PositionsProperty(r, x -> not IsZero(x));
-                Error("relation");
+
+                for x in nz do
+                    v2 := variable_to_row[x];
+                    variable_to_row[x] := 0;
+                    if v2 <> 0 then
+                        r2 := row_to_column[v2];
+                        row_to_column[v2] := 0;
+                        column_to_row[r2] := 0;
+                    fi;
+                od;
             fi;
         od;
     od;
 
-    Error("select");
+    pre.variable_to_row := variable_to_row;
+    pre.column_to_row := column_to_row;
+    pre.variable_select := PositionsProperty(variable_to_row, x -> not IsZero(x));
+    pre.column_select := PositionsProperty(column_to_row, x -> not IsZero(x));
 end;
 
 
@@ -342,35 +353,32 @@ function(imat, p)
 
     n := Length(imat);
     Info(InfoMajoranaLinearEq, 5,
-         "number of variables: ", n);
+         "  number of variables: ", n);
 
     Info(InfoMajoranaLinearEq, 5,
-         "number of equations: ", Length(imat[1]));
+         "  number of equations: ", Length(imat[1]));
 
     Info(InfoMajoranaLinearEq, 5,
-         "reducing mod ", p);
+         "  reducing mod ", p);
     pmat := Z(p)^0 * imat;
     ConvertToMatrixRep(pmat);
 
     Info(InfoMajoranaLinearEq, 5,
-         "finding semiechelon form");
+         "  finding semiechelon form");
     res.semiech := SemiEchelonMatTransformation(pmat);
 
     SelectS(res);
     Info(InfoMajoranaLinearEq, 5,
-         "number of solvable variables:   ", Length(res.rsel));
+         "  number of solvable variables:   ", Length(res.variable_select));
+    Info(InfoMajoranaLinearEq, 5,
+         "done.");
 
     return res;
 end;
 
 
-# FIXME: Why is "selection" unused?
-#        The selection is a mask of variables that we hope
-#        to be solving for, so in principle (if that selection
-#        is small we could only add the selected entries)
-#        not entirely sure whether its worth it
 SelectedSolutionWithEchelonForm :=
-function(semiech, vec, selection)
+function(pre, vec)
     local i, ncols, vno, x, z, residue, soln;
 
     ncols := Length(vec);
@@ -378,21 +386,29 @@ function(semiech, vec, selection)
     ConvertToVectorRepNC(residue);
     # FIXME: If there are no coefficients then something
     #        is wrong anyway
-    soln := ZeroMutable(semiech.coeffs[1]);
+    soln := ZeroMutable(pre.semiech.coeffs[1]);
     ConvertToVectorRepNC(soln);
 
     # "speed up" zero test
     z := Zero(vec[1]);
-    for i in [1..ncols] do
-        vno := semiech.heads[i];
-        if vno <> 0 then
-            x := residue[i];
-            if x <> z then
-                AddRowVector(residue, semiech.vectors[vno], -x);
-                AddRowVector(soln, semiech.coeffs[vno], x);
-            fi;
+    for i in [1..Length(pre.column_select)] do
+        vno := pre.column_to_row[pre.column_select[i]];
+        x := residue[pre.column_select[i]];
+        if x <> z then
+            AddRowVector(residue, pre.semiech.vectors[vno], -x);
+            AddRowVector(soln, pre.semiech.coeffs[vno], x);
         fi;
     od;
+#    for i in [1..ncols] do
+#        vno := semiech.heads[i];
+#        if vno <> 0 then
+#            x := residue[i];
+#            if x <> z then
+#                AddRowVector(residue, pre.semiech.vectors[vno], -x);
+#                AddRowVector(soln, pre.semiech.coeffs[vno], x);
+#            fi;
+#        fi;
+#    od;
    return rec( residue := residue
              , solution := soln );
 end;
@@ -484,20 +500,22 @@ function(pre, mat, b, p, iter_step)
         vec_p := Z(p)^0 * residue;
 
         # Note that SelectedSolutionWithEchelonForm converts to vector rep
-        soln_p := SelectedSolutionWithEchelonForm(pre.semiech, vec_p, pre.csel);
+        soln_p := SelectedSolutionWithEchelonForm(pre, vec_p);
 
-        if IsZero( soln_p.residue{ pre.csel } ) then
+        if IsZero( soln_p.residue{ pre.column_select } ) then
             # Convert the solution from GF(p) to integers -p/2..p/2-1
             y := List(soln_p.solution, IntFFESymm);
 
             # they are the coefficients of the p-adic expansion of the denominator
+            # coeffs_padic := coeffs_padic + List(y, c -> PadicNumber(fam, ppower * -c));
             coeffs_padic := coeffs_padic + List(y, c -> PadicNumber(fam, [iterations, c mod fam!.modulus ] ) );
              # c * ppower));
 
             AddRowVector(soln, y, ppower);
 
             for i in [1..Length(mat)] do
-                AddRowVector(residue, mat[i], -y[i]);
+#                AddRowVector(residue, mat[i], -y[i]);
+                residue{ pre.column_select } := residue{ pre.column_select } - y[i] * mat[i]{pre.column_select};
             od;
 
             Info(InfoMajoranaLinearEq, 10, "soln:    ", soln);
@@ -505,7 +523,7 @@ function(pre, mat, b, p, iter_step)
             Info(InfoMajoranaLinearEq, 10, "residue: ", residue);
 
             # Solution found?
-            if IsZero(residue{ pre.csel } ) then
+            if IsZero(residue{ pre.column_select } ) then
                 Info(InfoMajoranaLinearEq, 5,
                      "found an integer solution");
                 return [soln, 1];
@@ -514,16 +532,13 @@ function(pre, mat, b, p, iter_step)
                     Info(InfoMajoranaLinearEq, 5,
                          "reached iteration limit, trying to compute denominator");
                     # Compute the least common denominator of them all
-                    denom := PadicDenominatorList( coeffs_padic{ pre.rsel }, 50 * iter_step );
+                    denom := PadicDenominatorList( coeffs_padic{ pre.variable_select }, 50 * iter_step );
                     Info(InfoMajoranaLinearEq, 5,
                          "found denominator: ", denom);
-                    if denom = fail then
-                        Error("fail");
-                    fi;
 
                     # FIXME: Hack
                     if denom = fail then
-                        denom := PadicDenominatorList( coeffs_padic{ pre.rsel }, 10 * iter_step);
+                        denom := PadicDenominatorList( coeffs_padic{ pre.variable_select }, 10 * iter_step);
                     fi;
 
                     if denom = fail then
@@ -549,7 +564,7 @@ function(pre, mat, b, p, iter_step)
                 fi;
 
                 # The residue better be divisible by p now.
-                residue{ pre.csel } := residue{ pre.csel } / p;
+                residue{ pre.column_select } := residue{ pre.column_select } / p;
                 ppower := ppower * p;
             fi;
         else
@@ -600,7 +615,7 @@ function(mat, vecs)
 
     pre := Presolve(intsys[1], intsys[7]);
 
-    if pre.rsel = [] then
+    if pre.variable_select = [] then
         res.solutions := ListWithIdenticalEntries(Length(tmat), fail);
         res.mat := [];
         res.vec := [];
@@ -620,13 +635,79 @@ function(mat, vecs)
 
     res.solutions := TransposedMatMutable(tsols);
 
-    for i in Difference([1..Length(res.solutions)], pre.rsel) do
+    for i in Difference([1..Length(res.solutions)], pre.variable_select) do
         res.solutions[i] := fail;
     od;
 
     # FIXME: It would be more efficient (in particular for large matrices)
     #        to just return the selector (As RP calls it)
-    unsol := Difference([1..Length(mat)], pre.rsel);
+    unsol := Difference([1..Length(mat)], pre.column_select);
+    Print("unsolved (", Length(unsol), ") ", unsol, "\n");
+
+    res.mat := mat{ unsol };
+    res.vec := vecs{ unsol };
+#    res.mat := [[]];
+#    res.vec := [[]];
+
+    return res;
+end);
+
+## Plug alternative
+InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin2,
+function(mat, vecs)
+    local res, tmat, tvecs, tsols, intsys, pre, max_iter, i, v, sl, denom, unsol;
+
+    max_iter := MAJORANA_LinAlg_Padic_Iterations;
+
+    Info(InfoMajoranaLinearEq, 1, "Using p-adic expansion code (inverse variant)...");
+    Info(InfoMajoranaLinearEq, 1, " ", Length(mat[1]), " variables");
+    Info(InfoMajoranaLinearEq, 1, " ", Length(mat), " equations");
+
+    res := rec( );
+
+    tmat := TransposedMat(mat);
+#    tvecs := TransposedMat(vecs);
+
+    Info(InfoMajoranaLinearEq, 1, " zero rows: ", Length(PositionsProperty(tmat, IsZero)));
+
+    intsys := MakeIntSystem(tmat, [[]]);
+
+    pre := Presolve(intsys[1], intsys[7]);
+
+    if pre.variable_select = [] then
+        res.solutions := ListWithIdenticalEntries(Length(tmat), fail);
+        res.mat := [];
+        res.vec := [];
+        return res;
+    fi;
+
+    intsys[2] := [];
+    for i in pre.column_select do
+        v := [1..Length(intsys[1][1])] * 0;
+        v[i] := 1;
+        Add(intsys[2], v);
+    od;
+
+    tsols := [];
+    # FIXME: This is a bit ugly: we thread the denominator through
+    #        the loop to avoid recomputing denominators (because its expensive)
+    denom := 1;
+    sl := [,1];
+    for v in intsys[2] do
+        denom := LcmInt(denom,  sl[2]);
+        sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, intsys[7], max_iter);
+        Add(tsols, sl[1] / denom);
+    od;
+
+    res.solutions := TransposedMatMutable(tsols);
+
+    for i in Difference([1..Length(res.solutions)], pre.variable_select) do
+        res.solutions[i] := fail;
+    od;
+
+    # FIXME: It would be more efficient (in particular for large matrices)
+    #        to just return the selector (As RP calls it)
+    unsol := Difference([1..Length(mat)], pre.column_select);
     Print("unsolved (", Length(unsol), ") ", unsol, "\n");
 
     res.mat := mat{ unsol };

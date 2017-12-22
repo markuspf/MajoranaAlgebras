@@ -161,6 +161,8 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs,
         
         m := Size(mat);
         n := Size(mat[1]);
+        Error("plaaa!");
+        
 
         res := SemiEchelonMatTransformation(mat);
         mat := List(res.vectors,ShallowCopy);
@@ -204,6 +206,8 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs,
         od;
 
         Print("unsolved: (", Length(unsolved), "): ", unsolved, "\n");
+        Print("new_mat: ", new_mat, "\n");
+        Print("new_vec: ", new_vec, "\n");
         
         return rec( solutions := sol,
                     mat := new_mat,
