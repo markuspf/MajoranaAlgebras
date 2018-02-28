@@ -161,8 +161,6 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs,
         
         m := Size(mat);
         n := Size(mat[1]);
-        Error("plaaa!");
-        
 
         res := SemiEchelonMatTransformation(mat);
         mat := List(res.vectors,ShallowCopy);
@@ -180,12 +178,16 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs,
             pos := heads[i];
             
             if pos = 0 then 
+                if i = 1 then Error("blerp"); fi;
+                
+                    
                 Add(unsolved,i);   
                 sol[i] := fail;             
             else
                 for j in [i + 1 .. n] do
                     if mat[pos][j] <> 0 then 
                         if j in unsolved then
+                            if i = 1 then Error("blerp"); fi;
                             Add(new_mat,mat[pos]);
                             Add(new_vec,vec[pos]);
                             Add(unsolved,i);
@@ -205,10 +207,9 @@ InstallGlobalFunction(MAJORANA_SolutionMatVecs,
             fi;
         od;
 
-        Print("unsolved: (", Length(unsolved), "): ", unsolved, "\n");
-        Print("new_mat: ", new_mat, "\n");
-        Print("new_vec: ", new_vec, "\n");
+        Error("sol");
         
+
         return rec( solutions := sol,
                     mat := new_mat,
                     vec := new_vec,

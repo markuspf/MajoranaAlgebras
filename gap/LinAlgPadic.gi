@@ -1,31 +1,7 @@
 
-ConvertSparse := function(smat, p)
-    local m, r, i, j, m2, maxrow, maxcol;
-
-    maxrow := Maximum(List(smat![5]![5], x -> x[1]));
-    maxcol := Maximum(List(smat![5]![5], x -> x[2]));
-    Print("nonzero: ", maxrow, ", ", maxcol, "\n");
-
-    Print("creating non-sparse primefield mat\n");
-    r := ListWithIdenticalEntries(maxcol, Zero(GF(p)));
-    ConvertToVectorRep(r);
-    m := [];
-    for i in [1..maxrow] do
-        m[i] := ShallowCopy(r);
-    od;
-
-    Print("copy & convert to prime field mat\n");
-    for i in mat![5]![5] do
-        m[i[1],i[2]] := mat![5][i] * One(GF(p));
-    od;
-
-    return m;
-end;
-
-
-
 # FIXME: This function does a divide-and-conquer map/reduce
 #        over a list. This should go in the GAP library
+#        And be a C function
 _FoldList2 := function(list, func, op)
     local k, s, old_s, r, i, len, n, nh, res, r1, r2;
 
@@ -275,67 +251,43 @@ end;
 # FIXME: This is ugly and inefficient
 #        and possibly still not quite right
 SelectS := function(pre)
-    local i, j, n, k, x, r2
-          , vars
-
-          , rsel
-
+    local n, k, x
           , column_select   # The columns in b that we are able to solve with
-          , column_to_row   # column_to_row[i] is the row of vectors that has the pivot (leftmost entry = One(Field))
-          , row_to_column
-          , variable_to_row # which variable (column in x) is linked to row i
-          , row_select      # probably better named "variable select"
           , variable_select #
-          , nz, v, v2
-          , c, r, coeffs, nze, nheads
-          , rmask;
-
-
-    # These are the columns that we can zero in a RHS (i.e. columns that have pivots)
-    column_select := PositionsProperty(pre.semiech.heads, x -> not IsZero(x));
-
-    # column_to_row[column] is the row in vectors that has the pivot in column
-    column_to_row := ShallowCopy(pre.semiech.heads);
-    # row_to_column[row] is the column that this row in vectors has the pivot in
-    row_to_column := List(pre.semiech.vectors, v -> PositionProperty(v, x -> not (IsZero(x))));
-
-    # first column in coefficients that is not zero
-    # row_to_variable := List(pre.)ListWithIdenticalEntries(Length(pre.semiech.coeffs[1]), 0);
+          , nz, v
+          , c, r
+          , hs, nh,
+          column_to_var, var_to_column;
 
     n := Length(pre.semiech.coeffs[1]);
-    variable_to_row := 0 * [1..n];
-    for c in column_select do
-        j := n;
-        while IsZero(pre.semiech.coeffs[column_to_row[c]][j]) and j >= 0 do j := j - 1; od;
-        if j > 0 then
-            variable_to_row[j] := column_to_row[c];
+    hs := pre.semiech.heads;
+    nh := PositionsProperty(hs, IsZero);
+    column_to_var := [1..n] * 0;
+    var_to_column := [1..n] * 0;
+    for x in [1..Length(hs)] do
+        if hs[x] <> 0 then
+            c := x;
+            v := n;
+            while IsZero(pre.semiech.coeffs[hs[x],v]) and v >= 0 do v := v - 1; od;
+            if IsEmpty(PositionsProperty(pre.semiech.vectors[hs[x]]{nh}, x -> not IsZero(x))) then
+                column_to_var[c] := v;
+                var_to_column[v] := c;
+            fi;
         fi;
     od;
-
-    variable_select := PositionsProperty(variable_to_row, x -> not IsZero(x));
     for r in pre.semiech.relations do
-        for v in variable_select do
-            # A relation involves a variable
-            if not IsZero(r[v]) then
-                nz := PositionsProperty(r, x -> not IsZero(x));
-
-                for x in nz do
-                    v2 := variable_to_row[x];
-                    variable_to_row[x] := 0;
-                    if v2 <> 0 then
-                        r2 := row_to_column[v2];
-                        row_to_column[v2] := 0;
-                        column_to_row[r2] := 0;
-                    fi;
-                od;
+        nz := PositionsProperty(r, x -> not IsZero(x));
+        for c in nz do
+            x := var_to_column[c];
+            var_to_column[c] := 0;
+            if x <> 0 then
+                column_to_var[x] := 0;
             fi;
         od;
     od;
-
-    pre.variable_to_row := variable_to_row;
-    pre.column_to_row := column_to_row;
-    pre.variable_select := PositionsProperty(variable_to_row, x -> not IsZero(x));
-    pre.column_select := PositionsProperty(column_to_row, x -> not IsZero(x));
+    pre.variable_select := PositionsProperty(var_to_column, x -> not IsZero(x));
+    pre.column_select := PositionsProperty(column_to_var, x -> not IsZero(x));
+    return pre;
 end;
 
 
@@ -392,7 +344,8 @@ function(pre, vec)
     # "speed up" zero test
     z := Zero(vec[1]);
     for i in [1..Length(pre.column_select)] do
-        vno := pre.column_to_row[pre.column_select[i]];
+        vno := pre.semiech.heads[i];
+         #column_to_row[pre.column_select[i]];
         x := residue[pre.column_select[i]];
         if x <> z then
             AddRowVector(residue, pre.semiech.vectors[vno], -x);
@@ -570,7 +523,6 @@ function(pre, mat, b, p, iter_step)
         else
             Info(InfoMajoranaLinearEq, 5,
                  "there does not exist a rational solution");
-            Error("err?");
             return fail;
         fi;
     od;
@@ -592,6 +544,8 @@ function(mat, vecs, max_iter)
 
     return List(intsys[2], v -> MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, p, max_iter));
 end);
+
+
 
 ## Plug
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin,
@@ -628,9 +582,9 @@ function(mat, vecs)
     denom := 1;
     sl := [,1];
     for v in intsys[2] do
-        denom := LcmInt(denom,  sl[2]);
+#        denom := LcmInt(denom,  sl[2]);
         sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, intsys[7], max_iter);
-        Add(tsols, sl[1] / denom);
+#        Add(tsols, sl[1] / denom);
     od;
 
     res.solutions := TransposedMatMutable(tsols);
@@ -646,12 +600,13 @@ function(mat, vecs)
 
     res.mat := mat{ unsol };
     res.vec := vecs{ unsol };
+    res.unsolved := Difference([1..Length(res.solutions)], pre.variable_select);
 #    res.mat := [[]];
 #    res.vec := [[]];
 
     return res;
 end);
-
+ aM
 ## Plug alternative
 InstallGlobalFunction(MAJORANA_SolutionMatVecs_Plugin2,
 function(mat, vecs)
@@ -694,9 +649,10 @@ function(mat, vecs)
     denom := 1;
     sl := [,1];
     for v in intsys[2] do
-        denom := LcmInt(denom,  sl[2]);
-        sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, intsys[7], max_iter);
-        Add(tsols, sl[1] / denom);
+#        denom := LcmInt(denom,  sl[2]);
+        sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v, intsys[7], max_iter);
+        Add(tsols, sl[1] / sl[2]);
+        Error("pause zis");
     od;
 
     res.solutions := TransposedMatMutable(tsols);
@@ -714,6 +670,62 @@ function(mat, vecs)
     res.vec := vecs{ unsol };
 #    res.mat := [[]];
 #    res.vec := [[]];
+
+    return res;
+end);
+
+InstallGlobalFunction(MAJORANA_SolutionMatVecs_Test,
+function(mat, vecs, p, iter)
+    local res, tmat, tvecs, tsols, intsys, pre, max_iter, i, v, sl, denom, unsol;
+
+    max_iter := iter;
+
+    res := rec( );
+
+    tmat := TransposedMat(mat);
+    tvecs := TransposedMat(vecs);
+
+    Info(InfoMajoranaLinearEq, 1, " zero rows: ", Length(PositionsProperty(tmat, IsZero)));
+
+    intsys := MakeIntSystem(tmat, tvecs);
+
+    pre := Presolve(intsys[1], p);
+
+    if pre.variable_select = [] then
+        res.solutions := ListWithIdenticalEntries(Length(tmat), fail);
+        res.mat := [];
+        res.vec := [];
+        return res;
+    fi;
+
+    tsols := [];
+    # FIXME: This is a bit ugly: we thread the denominator through
+    #        the loop to avoid recomputing denominators (because its expensive)
+    denom := 1;
+    sl := [,1];
+    for v in intsys[2] do
+        denom := LcmInt(denom,  sl[2]);
+        sl := MAJORANA_SolutionIntMatVec_Padic(pre, intsys[1], v * denom, p, max_iter);
+        Add(tsols, sl[1] / denom);
+    od;
+
+    res.solutions := TransposedMatMutable(tsols);
+
+    for i in Difference([1..Length(res.solutions)], pre.variable_select) do
+        res.solutions[i] := fail;
+    od;
+
+    # FIXME: It would be more efficient (in particular for large matrices)
+    #        to just return the selector (As RP calls it)
+    unsol := Difference([1..Length(mat)], pre.column_select);
+    Print("unsolved (", Length(unsol), ") ", unsol, "\n");
+
+    res.mat := mat{ unsol };
+    res.vec := vecs{ unsol };
+    res.unsolved := Difference([1..Length(res.solutions)], pre.variable_select);
+    
+    #    res.mat := [[]];
+    #    res.vec := [[]];
 
     return res;
 end);
