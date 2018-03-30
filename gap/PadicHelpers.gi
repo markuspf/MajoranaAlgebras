@@ -146,11 +146,12 @@ PadicDenominatorList := function(list, max_iter)
     k := 1;
 
     repeat
-        denom := PadicDenominator(old_denom * list[k], max_iter);
+        # denom := PadicDenominator(old_denom * list[k], max_iter);
+        denom := PadicDenominator(list[k], max_iter);
 
         if (denom <> fail) and (denom > 1) then
             found := true;
-            old_denom := LcmInt(old_denom, denom);
+            old_denom := Lcm(old_denom, denom);
         fi;
 
         k := k + 1;

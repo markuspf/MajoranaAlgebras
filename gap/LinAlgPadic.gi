@@ -48,7 +48,7 @@ CheckSystem := function(system)
 end;
 
 Presolve := function(system)
-    system.mat_mod_p := system.mat * Z(system.p)^0;
+    system.mat_mod_p := system.int_mat * Z(system.p)^0;
     ConvertToMatrixRep(system.mat_mod_p);
 
     system.echelon := EchelonMatTransformation(system.mat_mod_p);
@@ -65,7 +65,7 @@ InstallGlobalFunction( MAJORANA_SolutionMatVec_Padic,
                        { mat, b, iter_step } -> MAJORANA_SolutionMatVecs_Padic(mat, [ b ], iter_step) );
 
 # Solve for multiple right-hand-sides
-InstallGlobalFunction(MAJORANA_SolutionMatVecs_Padic,
+InstallGlobalFunction(MAJORANA_SetupMatVecsSystem_Padic,
 function(mat, vecs, p, max_iter)
     local system, mmults, vmults, lcm;
     system := rec( mat := mat
@@ -96,14 +96,19 @@ function(mat, vecs, p, max_iter)
     Presolve(system);
 
     # Transposingpalooza
+    system.transposed_int_mat := TransposedMat(system.int_mat);
+    system.transposed_int_mat_sliced := system.transposed_int_mat{system.solvable_rows};
     system.transposed_coeffs := TransposedMat(system.echelon.coeffs);
     system.transposed_vecs := TransposedMat(system.int_vecs);
+    system.lifted_coeffs := List(system.transposed_coeffs, y -> List(y, IntFFESymm));
+
+    system.solution_denominator := 1;
 
     return system;
 end);
 
 InstallGlobalFunction( MAJORANA_SolutionIntMatVec_Padic,
-function(system)
+function(system, vi)
     local
         p,
 
@@ -113,11 +118,10 @@ function(system)
 
         # These are vectors in GF(p)
         vec_p,
-        soln_p,
+        soln_p, soln_pp,
 
         done, iterations,
         soln_padic,
-        fam,
         ppower, sol, x, y, i,
         k, old_denom, denom, vecd, iter;
 
@@ -127,7 +131,7 @@ function(system)
     # FIXME: only solved variables? Should cut down on memory use
     #        and how many p-adic expansions we have to actually turn
     #        into denominators
-    soln := ListWithIdenticalEntries(system.number_variables);
+    soln := ListWithIdenticalEntries(system.number_variables, 0);
 
     # These are the *integer* residuals of the RHS
     # initially this is the RHS we're solving for
@@ -136,7 +140,8 @@ function(system)
     #        but there might be a point in not solving all
     #        RHS at the same time, in case we discover enough 
     #        of the denominator to not have to approximate?
-    residue := MutableCopyMat(system.transposed_vecs[1]);
+    residue := MutableCopyMat(system.transposed_vecs[vi])
+               * system.solution_denominator;
 
     done := false;
     iterations := 0;
@@ -145,11 +150,7 @@ function(system)
     # digits in the p-adic approximation to the solution
     soln_padic := List([1..system.number_variables], x -> PadicNumber(system.padic_family, 0));
 
-    vec_p := residue * Z(p)^0;
-
-    # FIXME: just solve for the solvable ones?
-    # FIXME: Make sure that there is at least one solvable variable
-    while true do
+    while (not done) do
         iterations := iterations + 1;
 
         if iterations mod 100 = 0 then
@@ -159,6 +160,14 @@ function(system)
         # solve the system mod p
         vec_p := Z(p)^0 * residue;
         soln_p := vec_p * system.transposed_coeffs;
+        soln_p := List( system.echelon.heads,
+                      function(x)
+                          if x > 0 then
+                              return soln_p[x];
+                          else
+                              return Zero(soln_p[1]);
+                          fi;
+                      end);
 
         # Convert the solution from GF(p) to integers -p/2..p/2-1
         y := List(soln_p, IntFFESymm);
@@ -166,25 +175,23 @@ function(system)
         # they are the coefficients of the p-adic expansion of the denominator
         # the below is slow, and hence replaced by the hack below that.
         # soln_padic := soln_padic + List(y, c -> PadicNumber(fam, ppower * -c));
-        soln_padic := soln_padic + List(y, c -> PadicNumber(fam, [iterations, c mod fam!.modulus ] ) );
+        soln_padic := soln_padic + List(y, c -> PadicNumber(system.padic_family, [iterations, c mod system.padic_family!.modulus ] ) );
         AddRowVector(soln, y, ppower);
 
-        for i in [1..Length(system.int_mat)] do
-            AddRowVector(residue, system.int_mat[i], -y[i]);
-        od;
+        residue := (residue - y * system.transposed_int_mat) / p;
+        ppower := ppower * p;
 
         Info(InfoMajoranaLinearEq, 10, "soln:    ", soln);
         Info(InfoMajoranaLinearEq, 10, "y:       ", y);
         Info(InfoMajoranaLinearEq, 10, "residue: ", residue);
 
         # Solution found?
-        if IsZero(residue{ system.solvable_rows }) then
+        if IsZero( residue{ system.solvable_rows } ) then
             Info(InfoMajoranaLinearEq, 5,
                  "found an integer solution");
 
             # FIXME: I don't like this state struct design at the moment
             system.int_solution := soln;
-            system.solution_denominator := 1;
             return true;
         else
             if iterations > system.precision then
@@ -200,35 +207,42 @@ function(system)
                     Info( InfoMajoranaLinearEq, 10
                           , "failed to find denominator trying to increase p-adic precision");
 
+                    Print("failed to solve rhs ", vi, "\n");
+                    system.rhns := Intersection( system.solvable_rows,
+                                                 PositionsProperty(residue, x -> not IsZero(x)));
+                    Print("rhs not zero: ", system.rhns, " ", residue{ system.rhns },
+                          "\n");
+
                     Error("");
                     # FIXME: adjust system, i.e. we could increase precision?
                     #        no need to recurse, then, just continue...
-                    MAJORANA_SolutionIntMatVec_Padic(system);
-                    return system;
+                    # MAJORANA_SolutionIntMatVec_Padic(system);
+                    system.int_solution := soln;
+                    return true;
                 elif denom = 1 then
                     Info(InfoMajoranaLinearEq, 5,
                          "denominator 1 should not happen, trying to solve using GAP's builtin method");
-                    system.int_solution := SolutionMat(mat, system.transposed_vecs[1]);
-                    system.solution_denominator := 1;
-                    # FIXME: set done to true and don't return?
-                    return system;
+                    Error("Denominator 1 occurred. This should not happen.");
+                    return false;
                 else
                     Info(InfoMajoranaLinearEq, 5,
                          "solving system after multiplying b by denominator.");
 
-                    # FIXME: this makes the int_vec and transposed_vecs inconsistent
-                    system.transposed_vecs := system.transposed_vecs * denom;
-                    system.solution_denominator := Lcm(system.solution_denominator, denom);
+                    system.solution_denominator := system.solution_denominator * denom;
+
+                    Print("failed to solve rhs ", vi, "\n");
+                    system.rhns := Intersection( system.solvable_rows,
+                                                 PositionsProperty(residue, x -> not IsZero(x)));
+                    Print("rhs not zero: ", system.rhns, " ", residue{ system.rhns },
+                          "\n");
 
                     # try again with new denominator
-                    MAJORANA_SolutionIntMatVec_Padic(system);
-                    return system;
+                    MAJORANA_SolutionIntMatVec_Padic(system, vi);
+                    return true;
                 fi;
             fi;
 
-            # The residue better be divisible by p now.
-            residue{ system.solvable_rows } := residue{ system.solvable_rows } / p;
-            ppower := ppower * p;
+
         fi;
     od;
 end );

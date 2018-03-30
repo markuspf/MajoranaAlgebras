@@ -5,6 +5,7 @@ DeclareGlobalFunction( "MAJORANA_RatNumberFromModular" );
 DeclareGlobalFunction( "MAJORANA_IntMat" );
 DeclareGlobalFunction( "MAJORANA_SolutionWithEchelonForm" );
 
+DeclareGlobalFunction( "MAJORANA_SetupMatVecsSystem_Padic" );
 
 # solve for one vector (integer version)
 DeclareGlobalFunction( "MAJORANA_SolutionIntMatVec_Padic" );
