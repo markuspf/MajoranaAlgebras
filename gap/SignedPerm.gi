@@ -1,19 +1,36 @@
+BindGlobal( "TrimSignedPerm",
+function(p)
+    local ls;
+    ls := Length(p![2]);
+    while ls > 1 and IsZero(p![2][ls]) do ls := ls - 1; od;
+    p![3] := Maximum(LargestMovedPoint(p![1]), ls);
+    p![2] := (p![2]){[1..p![3]]} + ListWithIdenticalEntries(p![3], Z(2) * 0);
+    return p;
+end);
+
+
 BindGlobal( "SignedPermList",
 function(l)
-    local p, s, ts;
+    local sp, s, ts;
 
+    sp := [];
+
+    # Signs
     s := PositionsProperty(l, x -> x < 0);
     l{s} := -l{s};
-    p := PermList(l);
-    if p = fail then
+
+    sp![1] := PermList(l);
+    if sp![1] = fail then
         ErrorNoReturn("l does not define a permutation");
     fi;
 
-    ts := ListWithIdenticalEntries(Length(l), Z(2) * 0);
-    ts{s} := List(s, x -> Z(2)^0);
-    ConvertToVectorRep(ts);
+    sp![2] := ListWithIdenticalEntries(Length(l), Z(2) * 0);
+    sp![2]{s} := List(s, x -> Z(2)^0);
 
-    return Objectify( SignedPermType, [ p, ts ] );
+    TrimSignedPerm(sp);
+    ConvertToVectorRep(sp![2]);
+
+    return Objectify( SignedPermType, sp );
 end);
 
 BindGlobal( "ListSignedPerm",
@@ -42,7 +59,7 @@ end );
 
 BindGlobal( "SignedPerm",
 function(p, s)
-    return Objectify( SignedPermType, [ p, s ]);
+    return Objectify( SignedPermType, TrimSignedPerm([ p, s ]));
 end);
 
 InstallMethod(ViewObj, "for signed permutations",
@@ -54,27 +71,27 @@ end);
 InstallMethod(\*, "for signed permutations",
   [ IsSignedPermRep, IsSignedPermRep ],
 function(l, r)
-    return Objectify(SignedPermType, [ l![1] * r![1]
-                                     # This is really ugly!
-                                     , l![2] + Permuted(Zero(l![2]) + r![2], l![1]) ] );
+    local sp;
+    return Objectify(SignedPermType, TrimSignedPerm( [ l![1] * r![1]
+                                     , l![2] + Permuted(Zero(l![2]) + r![2], l![1]) ] ) );
 end);
 
 InstallMethod(InverseOp, "for signed permutations",
   [ IsSignedPermRep ],
 function(sp)
-    return Objectify(SignedPermType, [ sp![1]^-1, Permuted(sp![2], sp![1]^-1) ] );
+    return Objectify(SignedPermType, TrimSignedPerm([ sp![1]^-1, Permuted(sp![2], sp![1]^-1) ]) );
 end);
 
 InstallMethod(OneImmutable, "for signed permutations",
               [ IsSignedPermRep ],
 function(sp)
-    return Objectify(SignedPermType, [ (), [0 * Z(2)] ]);
+    return Objectify(SignedPermType, [ (), [] ]);
 end);
 
 InstallMethod(OneMutable, "for signed permutations",
               [ IsSignedPermRep ],
 function(sp)
-    return Objectify(SignedPermType, [ (), [0 * Z(2)] ]);
+    return Objectify(SignedPermType, [ (), [] ]);
 end);
 
 InstallMethod(IsOne, "for signed permutations",
@@ -105,11 +122,9 @@ end);
 InstallMethod( \=, "for a signed permutation and a signed permutation",
                [ IsSignedPermRep, IsSignedPermRep ],
 function(l,r)
-    local lmp;
-
+    # Trim?
     if l![1] = r![1] then
-        lmp := LargestMovedPoint(l![1]);
-        return l![2]{ [1..lmp ]} = r![2]{ [1..lmp] };
+        return l![2] = r![2];
     fi;
     return false;
 end);
@@ -117,13 +132,11 @@ end);
 InstallMethod( \<, "for a signed permutation and a signed permutation",
                [ IsSignedPermRep, IsSignedPermRep ],
 function(l,r)
-    local lmp;
-
+    # Trim?
     if l![1] < r![1] then
         return true;
     elif l![1] = r![1] then
-        lmp := LargestMovedPoint(l![1]);
-        return l![2]{ [1..lmp ]} < r![2]{ [1..lmp] };
+        return l![2] < r![2];
     fi;
     return false;
 end);

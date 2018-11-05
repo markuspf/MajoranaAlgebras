@@ -7,3 +7,4 @@ DeclareRepresentation("IsSignedPermRep", IsSignedPerm and IsPositionalObjectRep,
 BindGlobal("SignedPermType", NewType(SignedPermFamily, IsSignedPermRep));
 
 DeclareGlobalFunction("OnPosPoints");
+
