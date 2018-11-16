@@ -68,6 +68,12 @@ function(sp)
     Print("<signed permutation ", sp![1], ", ", sp![2], ">");
 end);
 
+InstallMethod(PrintObj, "for signed permutations",
+[ IsSignedPermRep ],
+function(sp)
+    Print("<signed permutation ", sp![1], ", ", sp![2], ">");
+end);
+
 InstallMethod(\*, "for signed permutations",
   [ IsSignedPermRep, IsSignedPermRep ],
 function(l, r)
