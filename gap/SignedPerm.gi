@@ -79,7 +79,7 @@ InstallMethod(\*, "for signed permutations",
 function(l, r)
     local sp;
     return Objectify(SignedPermType, TrimSignedPerm( [ l![1] * r![1]
-                                     , l![2] + Permuted(Zero(l![2]) + r![2], l![1]) ] ) );
+                                     , Permuted(Zero(r![2]) + l![2], r![1]) + r![2] ] ) );
 end);
 
 InstallMethod(InverseOp, "for signed permutations",
@@ -153,3 +153,85 @@ InstallGlobalFunction(OnPosPoints,
 
 InstallTrueMethod( IsGeneratorsOfMagmaWithInverses
                  , IsSignedPermCollection );
+
+
+
+#### bla
+
+BindGlobal( "SignedPermL",
+function(list)
+    return Objectify( SignedPermListType, [ p ]));
+end);
+
+InstallMethod(ViewObj, "for signed permutations (list rep)",
+  [ IsSignedPermListRep ],
+function(sp)
+    Print("<signed permutation in list rep>");
+end);
+
+InstallMethod(PrintObj, "for signed permutations",
+[ IsSignedPermListRep ],
+function(sp)
+    Print("<signed permutation ", sp![1], ", ", sp![2], ">");
+end);
+
+InstallMethod(\*, "for signed permutations",
+  [ IsSignedPermListRep, IsSignedPermListRep ],
+function(l, r)
+    local sp;
+    return Objectify(SignedPermType, TrimSignedPerm( [ l![1] * r![1]
+                                     , Permuted(Zero(r![2]) + l![2], r![1]) + r![2] ] ) );
+end);
+
+InstallMethod(InverseOp, "for signed permutations",
+  [ IsSignedPermListRep ],
+function(sp)
+    return Objectify(SignedPermType, TrimSignedPerm([ sp![1]^-1, Permuted(sp![2], sp![1]^-1) ]) );
+end);
+
+InstallMethod(OneImmutable, "for signed permutations",
+              [ IsSignedPermListRep ],
+function(sp)
+    return Objectify(SignedPermListType, [ [] ]);
+end);
+
+InstallMethod(OneMutable, "for signed permutations",
+              [ IsSignedPermListRep ],
+function(sp)
+    return Objectify(SignedPermListType, [ [] ]);
+end);
+
+InstallMethod(IsOne, "for signed permutations",
+  [ IsSignedPermListRep ],
+function(sp)
+    return IsEmpty(sp![1]);
+end);
+
+InstallMethod(\^, "for an integer and a signed permutation",
+  [ IsInt, IsSignedPermListRep ],
+function(pt, sp)
+    local spt, sign;
+
+    if pt < 0 then
+        spt := -pt;
+        sign := -1;
+    else
+        spt := pt;
+        sign := 1;
+    fi;
+
+    return sign * (sp![1][spt]);
+end);
+
+InstallMethod( \=, "for a signed permutation and a signed permutation",
+               [ IsSignedPermListRep, IsSignedPermListRep ],
+function(l,r)
+    # Trim?
+    return l![1] = r![1];
+end);
+
+InstallMethod( \<, "for a signed permutation and a signed permutation",
+               [ IsSignedPermListRep, IsSignedPermListRep ],
+function(l,r)
+    return l![1] < r![1];
+end);

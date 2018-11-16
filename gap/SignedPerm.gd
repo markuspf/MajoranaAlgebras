@@ -16,5 +16,8 @@ BindGlobal("SignedPermFamily", NewFamily("SignedPermFamily", IsSignedPerm));
 DeclareRepresentation("IsSignedPermRep", IsSignedPerm and IsPositionalObjectRep, []);
 BindGlobal("SignedPermType", NewType(SignedPermFamily, IsSignedPermRep));
 
+DeclareRepresentation("IsSignedPermListRep", IsSignedPerm and IsPositionalObjectRep, []);
+BindGlobal("SignedPermListType", NewType(SignedPermFamily, IsSignedPermListRep));
+
 DeclareGlobalFunction("OnPosPoints");
 
