@@ -9,10 +9,15 @@ DeclareCategory("IsSignedPerm",
                 IsMultiplicativeElementWithInverse and
                 IsFiniteOrderElement );
 
+BindGlobal("SignedPermFamily", NewFamily("SignedPermFamily", IsSignedPerm));
+
 DeclareCategoryCollections( "IsSignedPerm" );
 DeclareCategoryCollections( "IsSignedPermCollection" );
 
-BindGlobal("SignedPermFamily", NewFamily("SignedPermFamily", IsSignedPerm));
+DeclareConstructor( "NewSignedPerm", [ IsSignedPerm, IsList ] );
+DeclareConstructor( "NewSignedPerm", [ IsSignedPerm, IsPerm, IsList ] );
+
+
 DeclareRepresentation("IsSignedPermRep", IsSignedPerm and IsPositionalObjectRep, []);
 BindGlobal("SignedPermType", NewType(SignedPermFamily, IsSignedPermRep));
 

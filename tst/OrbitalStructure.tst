@@ -22,7 +22,7 @@ gap> UnorderedOrbitalCanonizingTest(os, [1..20]);
 true
 gap> UnorderedOrbitalTransversalTest(os, [1..20]);
 true
-gap> s := SignedPermList([3,-2,1,4,6,-5]);; t := SignedPermList([-1,-2,-3,5,4,10,7,8,-9,6]);;
+gap> s := SignedPermL([3,-2,1,4,6,-5]);; t := SignedPermL([-1,-2,-3,5,4,10,7,8,-9,6]);;
 gap> dom := Union([-10..-1],[1..10]);;
 gap> os := MAJORANA_OrbitalStructure([s, t], dom, OnPoints);;
 gap> OrbitalTest(os, dom);

@@ -10,17 +10,17 @@ true
 gap> ListSignedPerm(SignedPermList(lt)) = lt;
 true
 gap> s * t;
-<signed permutation ( 1, 3)( 4, 5,10, 6), [ Z(2)^0, 0*Z(2), Z(2)^0, 0*Z(2), 
-  0*Z(2), Z(2)^0, 0*Z(2), 0*Z(2), Z(2)^0, 0*Z(2) ]>
+<signed permutation ( 1, 3)( 4, 5,10, 6), [ Z(2)^0, 0*Z(2), Z(2)^0, Z(2)^0, 
+  0*Z(2), 0*Z(2), 0*Z(2), 0*Z(2), Z(2)^0, 0*Z(2) ]>
 gap> t * s;
 <signed permutation ( 1, 3)( 4, 6,10, 5), [ Z(2)^0, 0*Z(2), Z(2)^0, 0*Z(2), 
-  0*Z(2), 0*Z(2), 0*Z(2), 0*Z(2), Z(2)^0, Z(2)^0 ]>
+  Z(2)^0, 0*Z(2), 0*Z(2), 0*Z(2), Z(2)^0, 0*Z(2) ]>
 gap> One(s); One(t);
 <signed permutation (), [  ]>
 <signed permutation (), [  ]>
 gap> Inverse(s);
-<signed permutation (1,3)(5,6), [ 0*Z(2), Z(2)^0, 0*Z(2), 0*Z(2), Z(2)^0, 
-  0*Z(2) ]>
+<signed permutation (1,3)(5,6), [ 0*Z(2), Z(2)^0, 0*Z(2), 0*Z(2), 0*Z(2), 
+  Z(2)^0 ]>
 gap> Inverse(t);
 <signed permutation ( 4, 5)( 6,10), [ Z(2)^0, Z(2)^0, Z(2)^0, 0*Z(2), 0*Z(2), 
   0*Z(2), 0*Z(2), 0*Z(2), Z(2)^0, 0*Z(2) ]>
@@ -28,7 +28,7 @@ gap> Inverse(s) * s = One(s);
 true
 gap> Inverse(t) * s;
 <signed permutation ( 1, 3)( 4, 6,10, 5), [ Z(2)^0, 0*Z(2), Z(2)^0, 0*Z(2), 
-  0*Z(2), 0*Z(2), 0*Z(2), 0*Z(2), Z(2)^0, Z(2)^0 ]>
+  Z(2)^0, 0*Z(2), 0*Z(2), 0*Z(2), Z(2)^0, 0*Z(2) ]>
 gap> IsOne(s * Inverse(s));
 true
 gap> IsOne(Inverse(s) * s);
